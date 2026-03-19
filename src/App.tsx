@@ -5,6 +5,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { ReportView } from "./features/weekly-report/ReportView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
+// FloatingBubble is now a separate system-level window (see BubbleView.tsx)
 
 type TabId = "content" | "report" | "settings";
 
@@ -88,20 +89,28 @@ function App() {
   }, [switchTab]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-indigo-100/80 via-white to-purple-100/60 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950 transition-colors duration-300">
+      {/* Floating gradient orbs — the key to glass effect */}
+      <div className="orb orb-1" />
+      <div className="orb orb-2" />
+      <div className="orb orb-3" />
+      <div className="orb orb-4" />
+
       {/* Header with tab navigation */}
-      <header className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-lg border-b border-gray-200 dark:border-slate-700 sticky top-0 z-10">
+      <header className="glass-heavy sticky top-0 z-10 border-b border-white/30 dark:border-white/[0.06]" style={{ borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
         <div className="px-6 pt-4 pb-0">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div>
-                <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">小云</h1>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
+                  小云
+                </h1>
                 <p className="text-xs text-gray-400 dark:text-slate-500">你的智能信息助手</p>
               </div>
             </div>
             {/* Capture status */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-50 dark:bg-slate-700/50 text-[11px]">
-              <span className={`w-1.5 h-1.5 rounded-full ${captureEnabled ? "bg-green-400 animate-pulse" : "bg-gray-300 dark:bg-slate-600"}`} />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass text-[11px]">
+              <span className={`w-1.5 h-1.5 rounded-full ${captureEnabled ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)] animate-pulse" : "bg-gray-300 dark:bg-slate-600"}`} />
               <span className="text-gray-500 dark:text-slate-400">
                 {captureEnabled ? "运行中" : "已暂停"}
               </span>
@@ -116,31 +125,30 @@ function App() {
                 onClick={() => switchTab(tab.id)}
                 className={`
                   relative flex items-center gap-1.5 px-4 py-2 text-sm font-medium
-                  rounded-t-lg transition-all duration-200
+                  rounded-xl transition-all duration-200
                   ${
                     activeTab === tab.id
-                      ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-500/10"
-                      : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                      ? "bg-white/60 dark:bg-white/[0.12] text-indigo-600 dark:text-indigo-400 shadow-[0_2px_8px_rgba(99,102,241,0.1)] backdrop-blur-sm border border-white/60 dark:border-white/[0.1]"
+                      : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-white/30 dark:hover:bg-white/[0.04]"
                   }
                 `}
               >
                 <span className="text-base">{tab.icon}</span>
                 <span>{tab.label}</span>
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-500 dark:bg-blue-400 rounded-full" />
-                )}
               </button>
             ))}
           </nav>
         </div>
       </header>
 
-      {/* Tab content */}
-      <main>
+      {/* Tab content — relative z-index above orbs */}
+      <main className="relative z-[1]">
         {activeTab === "content" && <ContentList />}
         {activeTab === "report" && <ReportView />}
         {activeTab === "settings" && <SettingsView />}
       </main>
+
+      {/* Floating bubble is now a separate always-on-top window (BubbleView) */}
     </div>
   );
 }

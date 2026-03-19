@@ -1,11 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useSettingsStore,
   MODELS_BY_PROVIDER,
   PROVIDER_LABELS,
   type AIProvider,
   type ThemeMode,
+  type BubbleStyle,
+  type BubblePosition,
 } from "../../stores/settingsStore";
+
+const BUBBLE_POSITION_OPTIONS: { value: BubblePosition; label: string; icon: string }[] = [
+  { value: "bottom-right", label: "右下", icon: "↘" },
+  { value: "bottom-center", label: "下方居中", icon: "↓" },
+  { value: "bottom-left", label: "左下", icon: "↙" },
+  { value: "top-right", label: "右上", icon: "↗" },
+  { value: "top-center", label: "上方居中", icon: "↑" },
+  { value: "top-left", label: "左上", icon: "↖" },
+];
 
 const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
   { value: "light", label: "浅色", icon: "☀️" },
@@ -20,6 +31,10 @@ export function SettingsView() {
     model,
     theme,
     captureEnabled,
+    captureMode,
+    bubbleStyle,
+    bubblePosition,
+    countdownDuration,
     sensitiveFilterEnabled,
     urlReadingEnabled,
     screenshotDir,
@@ -30,13 +45,22 @@ export function SettingsView() {
     setModel,
     setTheme,
     setCaptureEnabled,
+    setCaptureMode,
+    setBubbleStyle,
+    setBubblePosition,
+    setCountdownDuration,
     setSensitiveFilterEnabled,
     setUrlReadingEnabled,
+    loadXReaderStatus,
   } = useSettingsStore();
 
   const [showApiKey, setShowApiKey] = useState(false);
 
   const availableModels = MODELS_BY_PROVIDER[provider];
+
+  useEffect(() => {
+    loadXReaderStatus();
+  }, [loadXReaderStatus]);
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -46,7 +70,7 @@ export function SettingsView() {
           <span className="text-xl">🎨</span>
           外观
         </h2>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+        <div className="glass rounded-2xl">
           <div className="p-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               主题模式
@@ -61,8 +85,8 @@ export function SettingsView() {
                     transition-all duration-150
                     ${
                       theme === opt.value
-                        ? "bg-blue-50 dark:bg-blue-500/15 border-blue-300 dark:border-blue-500/50 text-blue-700 dark:text-blue-400 shadow-sm"
-                        : "bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-600"
+                        ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                        : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
                     }
                   `}
                 >
@@ -81,7 +105,7 @@ export function SettingsView() {
           <span className="text-xl">🤖</span>
           AI 配置
         </h2>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm divide-y divide-gray-100 dark:divide-slate-700">
+        <div className="glass rounded-2xl divide-y divide-gray-100/50 dark:divide-white/[0.06]">
           {/* API Key */}
           <div className="p-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
@@ -93,18 +117,18 @@ export function SettingsView() {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="输入你的 API Key..."
-                className="w-full px-3 py-2 pr-20 text-sm border border-gray-200 dark:border-slate-600 rounded-lg
-                           bg-gray-50 dark:bg-slate-700 text-gray-800 dark:text-gray-200
+                className="w-full px-3 py-2 pr-20 text-sm border border-white/60 dark:border-white/[0.1] rounded-xl
+                           bg-white/50 dark:bg-white/[0.04] text-gray-800 dark:text-gray-200
                            placeholder-gray-400 dark:placeholder-slate-500
-                           focus:bg-white dark:focus:bg-slate-600 focus:border-blue-400 dark:focus:border-blue-500
-                           focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500 outline-none transition-all"
+                           focus:bg-white/80 dark:focus:bg-white/[0.08] focus:border-indigo-400/60 dark:focus:border-indigo-500/40
+                           focus:ring-1 focus:ring-indigo-400/30 dark:focus:ring-indigo-500/30 outline-none transition-all"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1
                            text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200
-                           bg-gray-100 dark:bg-slate-600 hover:bg-gray-200 dark:hover:bg-slate-500 rounded transition-colors"
+                           bg-white/60 dark:bg-white/[0.08] hover:bg-white/80 dark:hover:bg-white/[0.12] rounded-lg transition-colors"
               >
                 {showApiKey ? "隐藏" : "显示"}
               </button>
@@ -129,8 +153,8 @@ export function SettingsView() {
                     transition-all duration-150
                     ${
                       provider === p
-                        ? "bg-blue-50 dark:bg-blue-500/15 border-blue-300 dark:border-blue-500/50 text-blue-700 dark:text-blue-400 shadow-sm"
-                        : "bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-600"
+                        ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                        : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
                     }
                   `}
                 >
@@ -145,7 +169,7 @@ export function SettingsView() {
                   href="https://openrouter.ai/keys"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-500 dark:text-blue-400 hover:underline"
+                  className="text-indigo-500 dark:text-indigo-400 hover:underline"
                 >
                   前往获取 Key
                 </a>
@@ -161,10 +185,10 @@ export function SettingsView() {
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-lg
-                         bg-gray-50 dark:bg-slate-700 text-gray-800 dark:text-gray-200
-                         focus:bg-white dark:focus:bg-slate-600 focus:border-blue-400 dark:focus:border-blue-500
-                         focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500 outline-none transition-all cursor-pointer"
+              className="w-full px-3 py-2 text-sm border border-white/60 dark:border-white/[0.1] rounded-xl
+                         bg-white/50 dark:bg-white/[0.04] text-gray-800 dark:text-gray-200
+                         focus:bg-white/80 dark:focus:bg-white/[0.08] focus:border-indigo-400/60 dark:focus:border-indigo-500/40
+                         focus:ring-1 focus:ring-indigo-400/30 dark:focus:ring-indigo-500/30 outline-none transition-all cursor-pointer"
             >
               {(() => {
                 const hasGroups = availableModels.some((m) => m.group);
@@ -206,7 +230,7 @@ export function SettingsView() {
           <span className="text-xl">📸</span>
           捕获设置
         </h2>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm divide-y divide-gray-100 dark:divide-slate-700">
+        <div className="glass rounded-2xl divide-y divide-gray-100/50 dark:divide-white/[0.06]">
           {/* Capture Toggle */}
           <div className="p-4 flex items-center justify-between">
             <div>
@@ -221,7 +245,7 @@ export function SettingsView() {
               onClick={() => setCaptureEnabled(!captureEnabled)}
               className={`
                 relative w-11 h-6 rounded-full transition-colors duration-200
-                ${captureEnabled ? "bg-blue-500" : "bg-gray-300 dark:bg-slate-600"}
+                ${captureEnabled ? "bg-gradient-to-r from-indigo-500 to-purple-500" : "bg-gray-300 dark:bg-slate-600"}
               `}
             >
               <span
@@ -234,6 +258,139 @@ export function SettingsView() {
               />
             </button>
           </div>
+
+          {/* Capture Mode */}
+          <div className="p-4">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              捕获模式
+            </div>
+            <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+              确认模式：复制后弹出悬浮球，点击才保存；自动模式：所有内容自动保存
+            </div>
+            <div className="flex gap-2">
+              {([
+                { value: "confirm" as const, label: "确认保存", icon: "🫧", desc: "悬浮球确认" },
+                { value: "auto" as const, label: "自动保存", icon: "⚡", desc: "全部自动" },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setCaptureMode(opt.value)}
+                  className={`
+                    flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg border
+                    transition-all duration-150
+                    ${
+                      captureMode === opt.value
+                        ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                        : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
+                    }
+                  `}
+                >
+                  <span>{opt.icon}</span>
+                  <span>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bubble Style (only when confirm mode) */}
+          {captureMode === "confirm" && (
+            <div className="p-4">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                悬浮球样式
+              </div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+                圆形更小巧，长条显示更多信息
+              </div>
+              <div className="flex gap-2">
+                {([
+                  { value: "circle" as BubbleStyle, label: "圆形", icon: "🫧" },
+                  { value: "bar" as BubbleStyle, label: "长条", icon: "▬" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setBubbleStyle(opt.value)}
+                    className={`
+                      flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg border
+                      transition-all duration-150
+                      ${
+                        bubbleStyle === opt.value
+                          ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                          : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
+                      }
+                    `}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bubble Position (only when confirm mode) */}
+          {captureMode === "confirm" && (
+            <div className="p-4">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                悬浮球位置
+              </div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+                选择悬浮球弹出时的屏幕位置
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {BUBBLE_POSITION_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setBubblePosition(opt.value)}
+                    className={`
+                      flex items-center justify-center gap-1 px-2 py-2 text-sm font-medium rounded-lg border
+                      transition-all duration-150
+                      ${
+                        bubblePosition === opt.value
+                          ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                          : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
+                      }
+                    `}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Countdown Duration (only when confirm mode) */}
+          {captureMode === "confirm" && (
+            <div className="p-4">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                倒计时秒数
+              </div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+                悬浮球弹出后自动消失的等待时间
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={1}
+                  max={15}
+                  step={1}
+                  value={countdownDuration}
+                  onChange={(e) => setCountdownDuration(Number(e.target.value))}
+                  className="flex-1 h-1.5 rounded-full appearance-none bg-gray-200 dark:bg-slate-600
+                             accent-indigo-500 cursor-pointer
+                             [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                             [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gradient-to-r
+                             [&::-webkit-slider-thumb]:from-indigo-500 [&::-webkit-slider-thumb]:to-purple-500
+                             [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 min-w-[3rem] text-center
+                               bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15
+                               px-2 py-1 rounded-lg border border-indigo-300/40 dark:border-indigo-500/20">
+                  {countdownDuration}s
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Sensitive Data Filter Toggle */}
           <div className="p-4 flex items-center justify-between">
@@ -291,14 +448,31 @@ export function SettingsView() {
             </button>
           </div>
 
+          {/* x-reader 状态提示 - 自动安装 */}
+          {urlReadingEnabled && (
+            <div className="mx-4 mb-4 p-3 bg-indigo-500/8 dark:bg-indigo-500/10 rounded-xl border border-indigo-200/50 dark:border-indigo-500/20">
+              <div className="flex items-start gap-2">
+                <span className="text-base">⚡️</span>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    增强内容读取
+                  </div>
+                  <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    自动支持微信公众号、X/Twitter、YouTube、B站、小红书等内容读取
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Screenshot Directory */}
           <div className="p-4">
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
               截图存储目录
             </div>
             <div
-              className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 rounded-lg
-                         border border-gray-100 dark:border-slate-600 font-mono break-all"
+              className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400 bg-white/40 dark:bg-white/[0.04] rounded-xl
+                         border border-white/50 dark:border-white/[0.06] font-mono break-all"
             >
               {screenshotDir}
             </div>
@@ -312,16 +486,16 @@ export function SettingsView() {
           <span className="text-xl">💾</span>
           存储信息
         </h2>
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+        <div className="glass rounded-2xl">
           <div className="p-4 grid grid-cols-2 gap-4">
-            <div className="text-center p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+            <div className="text-center p-3 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl border border-white/40 dark:border-white/[0.06]">
+              <div className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
                 {totalItems}
               </div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">已保存内容</div>
             </div>
-            <div className="text-center p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+            <div className="text-center p-3 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl border border-white/40 dark:border-white/[0.06]">
+              <div className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
                 {diskUsageMB.toFixed(1)} MB
               </div>
               <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">磁盘占用</div>

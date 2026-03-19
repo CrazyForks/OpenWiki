@@ -1,4 +1,5 @@
 use crate::ai::client::AiClient;
+use crate::ai::content_filter;
 use crate::ai::preference_engine;
 use crate::ai::prompts;
 use crate::storage::database::Database;
@@ -29,13 +30,15 @@ struct AiSectionJson {
 ///
 /// Steps:
 /// 1. Query content from the past 7 days
-/// 2. Build content summaries (truncate long texts to 500 chars)
+/// 2. (reserved)
 /// 3. Get user preferences
-/// 4. Build prompt from templates
-/// 5. Call AI API
-/// 6. Parse response JSON into WeeklyReport + ReportSections
-/// 7. Save to database
-/// 8. Return complete report
+/// 4. Smart pre-filtering (importance scoring, similarity dedup, category balancing)
+/// 5. Build content summaries with dynamic truncation
+/// 6. Build prompt from templates
+/// 7. Call AI API
+/// 8. Parse response JSON into WeeklyReport + ReportSections
+/// 9. Save to database
+/// 10. Return complete report
 pub async fn generate_weekly_report(
     db: Arc<Database>,
     api_key: &str,
@@ -68,19 +71,50 @@ pub async fn generate_weekly_report(
         return Err("本周没有保存任何内容".to_string());
     }
 
-    let content_count = contents.len() as i32;
-    log::info!("本周共有 {} 条内容", content_count);
+    let total_count = contents.len() as i32;
 
-    // Step 3: Build content summaries, truncating long text
-    // URL content with fetched articles gets 1000 chars; regular content gets 500
+    // Step 3: Get user preferences for smart filtering and prompt enrichment
+    let preference_summary = preference_engine::get_preference_summary(db.clone());
+    let preferences = {
+        let pref_repo = Repository::new(db.clone());
+        pref_repo.get_all_preferences().unwrap_or_default()
+    };
+
+    // Step 4: Smart pre-filtering — importance scoring, similarity dedup, category balancing
+    let (scored_contents, filtered_count) =
+        content_filter::smart_filter_for_report(&contents, &preferences);
+    log::info!(
+        "本周共 {} 条内容，智能预筛后保留 {} 条（过滤 {} 条）",
+        total_count,
+        scored_contents.len(),
+        filtered_count
+    );
+
+    if scored_contents.is_empty() {
+        return Err("本周没有有意义的内容可用于生成周报".to_string());
+    }
+
+    let content_count = total_count;
+
+    // Step 5: Build content summaries, truncating long text
+    // Higher-importance items get more character budget
     let mut content_summaries = String::new();
-    for item in &contents {
+    for scored in &scored_contents {
+        let item = scored.item;
         let is_fetched_url = item.content_type.as_str() == "url"
             && item.source_url.is_some()
             && item.raw_text.as_deref() != item.source_url.as_deref();
-        let max_chars: usize = if is_fetched_url { 1000 } else { 500 };
 
-        let text_preview = match &item.raw_text {
+        // Dynamic truncation: high-importance items get more chars
+        let max_chars: usize = if is_fetched_url {
+            if scored.importance > 0.5 { 1200 } else { 800 }
+        } else if scored.importance > 0.5 {
+            700
+        } else {
+            400
+        };
+
+        let text_preview: String = match &item.raw_text {
             Some(text) if !text.is_empty() => {
                 if text.chars().count() > max_chars {
                     let truncated: String = text.chars().take(max_chars).collect();
@@ -92,33 +126,42 @@ pub async fn generate_weekly_report(
             _ => "[图片内容]".to_string(),
         };
 
+        // Include importance hint for AI context
+        let importance_tag = if scored.importance > 0.6 {
+            " ⭐"
+        } else {
+            ""
+        };
+
         let line = if is_fetched_url {
             let url = item.source_url.as_deref().unwrap_or("");
             format!(
-                "- [ID: {}] [url] 来自「{}」({}): [原文: {}]\n  摘要: {}",
-                item.id, item.source_app, item.captured_at, url, text_preview
+                "- [ID: {}] [url]{} 来自「{}」({}): [原文: {}]\n  摘要: {}",
+                item.id, importance_tag, item.source_app, item.captured_at, url, text_preview
             )
         } else {
-            prompts::format_content_item(
+            let base = prompts::format_content_item(
                 &item.id,
                 item.content_type.as_str(),
                 &item.source_app,
                 &item.captured_at,
                 &text_preview,
-            )
+            );
+            if importance_tag.is_empty() {
+                base
+            } else {
+                base.replacen("]", &format!("]{}", importance_tag), 2)
+            }
         };
         content_summaries.push_str(&line);
         content_summaries.push('\n');
     }
 
-    // Step 4: Get user preferences summary
-    let preference_summary = preference_engine::get_preference_summary(db.clone());
-
-    // Step 5: Build the prompt
+    // Step 6: Build the prompt
     let system_prompt = prompts::weekly_report_system_prompt();
     let user_message = prompts::weekly_report_user_message(&content_summaries, &preference_summary);
 
-    // Step 6: Call the AI API
+    // Step 7: Call the AI API
     let client = AiClient::new(
         api_key.to_string(),
         provider.to_string(),
@@ -132,7 +175,7 @@ pub async fn generate_weekly_report(
 
     log::info!("AI 响应已收到, 解析中...");
 
-    // Step 7: Parse the JSON response
+    // Step 8: Parse the JSON response
     let response_text = ai_response.text.trim().to_string();
 
     // Strip potential markdown code block markers
@@ -234,13 +277,13 @@ pub async fn generate_weekly_report(
         sections,
     };
 
-    // Step 8: Save the report and sections to the database
+    // Step 9: Save the report and sections to the database
     repo.save_report(&report)
         .map_err(|e| format!("保存周报失败: {}", e))?;
 
     log::info!("周报生成完成, ID: {}", report.id);
 
-    // Step 9: Return the complete report
+    // Step 10: Return the complete report
     Ok(report)
 }
 

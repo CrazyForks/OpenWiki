@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useReportStore } from "../../stores/reportStore";
@@ -107,9 +108,9 @@ export function ReportView() {
     : formatCurrentWeekRange();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+    <div className="min-h-screen">
       {/* ── Header ── */}
-      <div className="sticky top-0 z-20 bg-gray-50/80 dark:bg-slate-900/80 backdrop-blur-lg">
+      <div className="sticky top-0 z-20 glass-heavy">
         <div className="px-4 py-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
@@ -361,16 +362,19 @@ function CardGridLayout({
         {report.content_count} 条内容 · {report.sections.length} 项分析
       </p>
 
-      {/* Detail Panel — slides in from right */}
-      <AnimatePresence>
-        {selectedSection && (
-          <SectionDetailPanel
-            section={selectedSection}
-            contentItems={selectedContentItems}
-            onClose={() => setSelectedSectionId(null)}
-          />
-        )}
-      </AnimatePresence>
+      {/* Detail Panel — rendered via Portal to escape parent transform context */}
+      {createPortal(
+        <AnimatePresence>
+          {selectedSection && (
+            <SectionDetailPanel
+              section={selectedSection}
+              contentItems={selectedContentItems}
+              onClose={() => setSelectedSectionId(null)}
+            />
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </motion.div>
   );
 }
@@ -405,7 +409,7 @@ function SectionListItem({
       className={`
         w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all duration-150 cursor-pointer
         ${isSelected
-          ? "bg-white dark:bg-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]"
+          ? "glass shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]"
           : "hover:bg-white/60 dark:hover:bg-slate-800/40"
         }
       `}
@@ -482,13 +486,17 @@ function SectionDetailPanel({
   const theme = SECTION_THEME[section.section_type] || DEFAULT_THEME;
   const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
 
-  // Close on Escape
+  // Close on Escape + lock background scroll
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = "";
+    };
   }, [onClose]);
 
   const handleFeedback = async (type: FeedbackType) => {
@@ -517,11 +525,11 @@ function SectionDetailPanel({
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        className="relative ml-auto w-full max-w-[400px] h-full bg-gray-50 dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col"
+        className="relative ml-auto w-full max-w-[400px] h-full glass-elevated overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
-        <div className="flex-shrink-0 px-4 pt-4 pb-3 bg-white dark:bg-slate-800 border-b border-gray-100 dark:border-slate-700">
+        <div className="flex-shrink-0 px-4 pt-4 pb-3 glass border-b ">
           <div className="flex items-start gap-3">
             {/* Back button */}
             <button
@@ -668,7 +676,7 @@ function FeedbackButton({
           ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-1 ring-blue-200 dark:ring-blue-500/20"
           : isDisabled
             ? "bg-gray-50 dark:bg-slate-800 text-gray-300 dark:text-slate-600 cursor-not-allowed"
-            : "bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm"
+            : "glass text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm"
         }
       `}
     >
@@ -708,9 +716,9 @@ function DetailContentItem({ content }: { content: CapturedContent }) {
   })();
 
   return (
-    <div className="rounded-xl bg-white dark:bg-slate-800 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.15)]">
+    <div className="rounded-xl glass p-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.15)]">
       <div className="flex items-start gap-2.5">
-        <div className="w-7 h-7 rounded-lg bg-gray-50 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 shadow-sm">
+        <div className="w-7 h-7 rounded-lg bg-white/40 dark:bg-white/[0.04] flex items-center justify-center flex-shrink-0 shadow-sm">
           <span className="text-sm">{icon}</span>
         </div>
 
@@ -785,7 +793,7 @@ function DetailContentItem({ content }: { content: CapturedContent }) {
 
 function StatsCard({ report }: { report: WeeklyReport }) {
   const stats = report.report_json?.stats;
-  if (!stats) return <div className="rounded-2xl bg-white dark:bg-slate-800 p-4" />;
+  if (!stats) return <div className="rounded-2xl glass p-4" />;
 
   const maxCount = Math.max(...stats.daily_counts, 1);
   const typeCounts = stats.type_counts ?? { text: 0, url: 0, image: 0 };
@@ -796,7 +804,7 @@ function StatsCard({ report }: { report: WeeklyReport }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="rounded-2xl bg-white dark:bg-slate-800
+      className="rounded-2xl glass
                  shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]
                  dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]
                  p-3.5 flex flex-col justify-between"
@@ -883,7 +891,7 @@ function RankingCard({ sections, onSelectSection }: {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
-      className="rounded-2xl bg-white dark:bg-slate-800
+      className="rounded-2xl glass
                  shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]
                  dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]
                  p-3.5 flex flex-col"
@@ -935,7 +943,7 @@ function EmptyState({ onGenerate }: { onGenerate: () => void }) {
       transition={{ duration: 0.4 }}
       className="flex flex-col items-center justify-center py-24 text-center"
     >
-      <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center mb-4">
+      <div className="w-16 h-16 rounded-2xl glass shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center mb-4">
         <svg className="w-7 h-7 text-gray-300 dark:text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
@@ -963,7 +971,7 @@ function GeneratingState() {
       className="flex flex-col items-center justify-center py-24 text-center"
     >
       <div className="relative mb-5">
-        <div className="w-14 h-14 rounded-2xl bg-white dark:bg-slate-800 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center">
+        <div className="w-14 h-14 rounded-2xl glass shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center">
           <motion.svg
             className="w-6 h-6 text-gray-400 dark:text-slate-400"
             fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
@@ -974,7 +982,7 @@ function GeneratingState() {
           </motion.svg>
         </div>
         <motion.div
-          className="absolute -inset-2 rounded-2xl border-2 border-gray-200 dark:border-slate-700"
+          className="absolute -inset-2 rounded-2xl border-2 "
           animate={{ scale: [1, 1.08, 1], opacity: [0.4, 0, 0.4] }}
           transition={{ duration: 1.5, repeat: Infinity }}
         />
@@ -1011,8 +1019,8 @@ function HistoryDropdown({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -4, scale: 0.97 }}
         transition={{ duration: 0.15 }}
-        className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-slate-800 rounded-xl shadow-lg
-                   border border-gray-100 dark:border-slate-700 overflow-hidden z-40"
+        className="absolute right-0 top-full mt-1 w-52 glass-heavy rounded-2xl shadow-lg
+                    overflow-hidden z-40"
       >
         <div className="max-h-52 overflow-y-auto">
           {reports.map((r) => {
@@ -1023,7 +1031,7 @@ function HistoryDropdown({
                 onClick={() => onSelect(r.week_start)}
                 className={`
                   w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors cursor-pointer
-                  ${active ? "bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-medium" : "text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/50"}
+                  ${active ? "bg-white/40 dark:bg-white/[0.04] text-gray-900 dark:text-gray-100 font-medium" : "text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/50"}
                 `}
               >
                 <span>{fmtDate(r.week_start)} - {fmtDate(r.week_end)}</span>

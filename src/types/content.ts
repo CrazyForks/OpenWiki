@@ -9,6 +9,7 @@ export interface CapturedContent {
   source_app: string;
   source_bundle_id?: string;
   source_url?: string;
+  user_note?: string;
   captured_at: string;
   content_hash: string;
   byte_size: number;

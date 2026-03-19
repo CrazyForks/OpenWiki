@@ -21,7 +21,7 @@ export function ActivityStatsCard({ stats, activeFilter, onFilterChange }: Activ
   return (
     <div className="flex items-center gap-0.5">
       {/* Segment-style filter tabs */}
-      <div className="flex items-center bg-gray-100/60 dark:bg-slate-800/60 rounded-lg p-0.5">
+      <div className="flex items-center glass rounded-xl p-0.5">
         <SegmentTab
           label="全部"
           count={stats.total_items}
@@ -95,7 +95,7 @@ function SegmentTab({
   color?: "blue" | "purple" | "amber";
 }) {
   const activeCountColor: Record<string, string> = {
-    blue: "text-blue-600 dark:text-blue-400",
+    blue: "text-indigo-600 dark:text-indigo-400",
     purple: "text-purple-600 dark:text-purple-400",
     amber: "text-amber-600 dark:text-amber-400",
   };
@@ -106,7 +106,7 @@ function SegmentTab({
       className={`
         px-2 py-1 rounded-md text-[11px] font-medium transition-all duration-150 cursor-pointer select-none
         ${active
-          ? "bg-white dark:bg-slate-700 shadow-sm text-gray-800 dark:text-gray-100"
+          ? "glass shadow-sm text-gray-800 dark:text-gray-100"
           : "text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
         }
       `}

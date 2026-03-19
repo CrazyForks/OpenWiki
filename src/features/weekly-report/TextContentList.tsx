@@ -47,7 +47,7 @@ function TextRow({ item, index }: { item: CapturedContent; index: number }) {
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15, delay: index * 0.02 }}
-      className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 px-2.5 py-2
+      className="glass rounded-2xl px-2.5 py-2
                  hover:shadow-sm transition-all cursor-pointer"
       onClick={() => setExpanded(!expanded)}
     >

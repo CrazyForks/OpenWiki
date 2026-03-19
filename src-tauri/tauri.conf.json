@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -22,6 +23,20 @@
         "transparent": false,
         "visible": false,
         "center": true
+      },
+      {
+        "label": "spotlight",
+        "title": "",
+        "url": "/spotlight",
+        "width": 520,
+        "height": 80,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "visible": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {
@@ -41,7 +56,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "scripts/*": "scripts/"
+    }
   },
   "plugins": {}
 }

@@ -39,6 +39,32 @@ impl Database {
         let migration_sql = include_str!("migrations/001_initial.sql");
         conn.execute_batch(migration_sql)?;
 
+        // Migration 002: Add user_note column (idempotent check)
+        let has_user_note: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('captured_content') WHERE name = 'user_note'")?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_user_note {
+            let migration_002 = include_str!("migrations/002_add_user_note.sql");
+            conn.execute_batch(migration_002)?;
+            log::info!("Migration 002 applied: added user_note column");
+        }
+
+        // Migration 003: Add chat_messages table
+        let has_chat_messages: bool = conn
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='chat_messages'")?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_chat_messages {
+            let migration_003 = include_str!("migrations/003_add_chat_messages.sql");
+            conn.execute_batch(migration_003)?;
+            log::info!("Migration 003 applied: added chat_messages table");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }

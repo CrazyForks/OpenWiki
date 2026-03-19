@@ -77,7 +77,7 @@ export function ImageFilmstrip({ items }: ImageFilmstripProps) {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 overflow-hidden">
+            <div className="glass rounded-2xl overflow-hidden">
               <img
                 src={
                   items[selectedIdx].image_path

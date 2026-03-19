@@ -43,7 +43,7 @@ export function ContentPreviewPanel({ items, onClose }: ContentPreviewPanelProps
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 28, stiffness: 300 }}
-          className="relative w-full max-h-[70vh] bg-white dark:bg-slate-800 rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
+          className="relative w-full max-h-[70vh] glass rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Handle bar + header */}
@@ -60,7 +60,7 @@ export function ContentPreviewPanel({ items, onClose }: ContentPreviewPanelProps
               </h3>
               <button
                 onClick={onClose}
-                className="w-6 h-6 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center
+                className="w-6 h-6 rounded-full bg-white/50 dark:bg-white/[0.06] flex items-center justify-center
                            text-gray-400 dark:text-slate-500 hover:bg-gray-200 dark:hover:bg-slate-600
                            transition-colors cursor-pointer"
               >
@@ -110,10 +110,10 @@ function ContentPreviewItem({ content }: { content: CapturedContent }) {
   const timeStr = formatTime(content.captured_at);
 
   return (
-    <div className="rounded-xl bg-gray-50 dark:bg-slate-700/50 p-3">
+    <div className="rounded-xl bg-white/40 dark:bg-slate-800/60 p-3">
       <div className="flex items-start gap-2.5">
         {/* Type badge */}
-        <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-700 flex items-center justify-center flex-shrink-0 shadow-sm">
+        <div className="w-7 h-7 rounded-lg glass flex items-center justify-center flex-shrink-0 shadow-sm">
           <span className="text-sm">{icon}</span>
         </div>
 
@@ -123,7 +123,7 @@ function ContentPreviewItem({ content }: { content: CapturedContent }) {
             <img
               src={imageSrc}
               alt="Preview"
-              className="max-w-full max-h-40 rounded-lg object-cover mb-2 border border-gray-200 dark:border-slate-600"
+              className="max-w-full max-h-40 rounded-lg object-cover mb-2 "
               loading="lazy"
             />
           )}

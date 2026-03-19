@@ -7,6 +7,7 @@ pub fn weekly_report_system_prompt() -> String {
 - 压制常规，放大异常：用户已知的常规信息不需要强调，意外的发现才有价值
 - 每个洞察都应可操作：告知用户信息的同时，给出建议或关联
 - 简洁至上：用户应在10秒内扫完摘要，1-2分钟读完全文
+- 严格过滤噪音：忽略明显无意义的碎片内容（如纯数字、乱码、无上下文的短语），不要把它们写进任何 section
 
 ## 你的分析能力：
 1. 主题聚类：将相关内容归纳到同一主题下
@@ -27,7 +28,7 @@ pub fn weekly_report_system_prompt() -> String {
 - key_insight：最多 1-2 个（只有真正重要的才标记）
 - highlight：1-2 个
 - trend：0-2 个
-- routine：0 个或多个（将不重要的内容归入此类）
+- routine：0 个（不要生成 routine 类型的 section，无关内容直接忽略即可）
 - recommendation：恰好 1 个（始终提供行动建议）
 - 总计 3-6 个 sections
 
@@ -74,7 +75,8 @@ pub fn weekly_report_user_message(content_summaries: &str, user_interests: &str)
 }}
 
 注意：
-- section_type 必须是 key_insight、highlight、trend、routine、recommendation 之一
+- section_type 必须是 key_insight、highlight、trend、recommendation 之一（不要使用 routine 类型）
+- 忽略所有零碎、无上下文、无法归类的内容片段，不要提及它们
 - sections 按 relevance_score 从高到低排列
 - recommendation 类型的 section 应包含具体可操作的建议"#
     )
@@ -132,6 +134,28 @@ pub fn topic_clustering_prompt(content_list: &str) -> String {
     }}
   ]
 }}"#
+    )
+}
+
+/// System prompt for the content chat feature.
+/// The AI acts as a reading assistant that discusses article content with the user.
+pub fn content_chat_system_prompt(article_text: &str) -> String {
+    format!(
+        r#"你是「小云」的阅读助手。用户正在阅读一篇文章，你需要基于文章内容和用户的问题进行对话。
+
+## 你的职责：
+- 回答用户关于文章内容的任何问题
+- 帮助用户总结、分析、提取关键信息
+- 用简洁清晰的中文回答
+- 如果用户的问题超出文章内容范围，可以结合你的知识回答，但要说明哪些是文章中的信息、哪些是你的补充
+
+## 文章内容：
+{article_text}
+
+## 回复风格：
+- 简洁有条理，避免冗长
+- 重要信息可用要点列出
+- 不要重复用户的问题"#
     )
 }
 

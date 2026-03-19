@@ -39,6 +39,7 @@ pub struct CapturedContent {
     pub source_app: String,
     pub source_bundle_id: Option<String>,
     pub source_url: Option<String>,
+    pub user_note: Option<String>,
     pub captured_at: String,
     pub content_hash: String,
     pub byte_size: i64,

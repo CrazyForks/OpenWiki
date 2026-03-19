@@ -26,8 +26,8 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
-            "INSERT INTO captured_content (id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, captured_at, content_hash, byte_size)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO captured_content (id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 content.id,
                 content.content_type.as_str(),
@@ -37,6 +37,7 @@ impl Repository {
                 content.source_app,
                 content.source_bundle_id,
                 content.source_url,
+                content.user_note,
                 content.captured_at,
                 content.content_hash,
                 content.byte_size,
@@ -56,7 +57,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
              FROM captured_content WHERE is_deleted = 0 ORDER BY captured_at DESC LIMIT ?1 OFFSET ?2"
         )?;
 
@@ -70,12 +71,13 @@ impl Repository {
                 source_app: row.get(5)?,
                 source_bundle_id: row.get(6)?,
                 source_url: row.get(7)?,
-                captured_at: row.get(8)?,
-                content_hash: row.get(9)?,
-                byte_size: row.get(10)?,
-                is_deleted: row.get::<_, i32>(11)? != 0,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })?;
 
@@ -106,6 +108,24 @@ impl Repository {
         Ok(())
     }
 
+    /// Update the raw_text of an existing content item (e.g. OCR result for images).
+    pub fn update_raw_text(
+        &self,
+        id: &str,
+        raw_text: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE captured_content SET raw_text = ?1, byte_size = ?2, updated_at = datetime('now') WHERE id = ?3",
+            params![raw_text, raw_text.len() as i64, id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_content(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self
             .db
@@ -117,6 +137,65 @@ impl Repository {
             params![id],
         )?;
         Ok(())
+    }
+
+    /// Update the user_note for an existing content item.
+    pub fn update_user_note(
+        &self,
+        id: &str,
+        note: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE captured_content SET user_note = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![note, id],
+        )?;
+        Ok(())
+    }
+
+    /// Find an existing content item by its content_hash (for dedup in spotlight).
+    pub fn find_content_by_hash(
+        &self,
+        hash: &str,
+    ) -> Result<Option<CapturedContent>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+             FROM captured_content WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1"
+        )?;
+
+        let mut rows = stmt.query_map(params![hash], |row| {
+            Ok(CapturedContent {
+                id: row.get(0)?,
+                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
+                raw_text: row.get(2)?,
+                image_path: row.get(3)?,
+                thumbnail_path: row.get(4)?,
+                source_app: row.get(5)?,
+                source_bundle_id: row.get(6)?,
+                source_url: row.get(7)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
     }
 
     pub fn content_exists_by_hash(&self, hash: &str) -> Result<bool, Box<dyn std::error::Error>> {
@@ -146,7 +225,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
              FROM captured_content
              WHERE is_deleted = 0 AND captured_at >= ?1 AND captured_at <= ?2
              ORDER BY captured_at DESC"
@@ -162,12 +241,13 @@ impl Repository {
                 source_app: row.get(5)?,
                 source_bundle_id: row.get(6)?,
                 source_url: row.get(7)?,
-                captured_at: row.get(8)?,
-                content_hash: row.get(9)?,
-                byte_size: row.get(10)?,
-                is_deleted: row.get::<_, i32>(11)? != 0,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })?;
 
@@ -189,7 +269,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
              FROM captured_content WHERE id = ?1 AND is_deleted = 0"
         )?;
 
@@ -203,12 +283,13 @@ impl Repository {
                 source_app: row.get(5)?,
                 source_bundle_id: row.get(6)?,
                 source_url: row.get(7)?,
-                captured_at: row.get(8)?,
-                content_hash: row.get(9)?,
-                byte_size: row.get(10)?,
-                is_deleted: row.get::<_, i32>(11)? != 0,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })?;
 
@@ -492,6 +573,68 @@ impl Repository {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    // ========== Chat Messages ==========
+
+    /// Save a chat message for a content item.
+    pub fn save_chat_message(
+        &self,
+        content_id: &str,
+        role: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO chat_messages (id, content_id, role, message) VALUES (?1, ?2, ?3, ?4)",
+            params![id, content_id, role, message],
+        )?;
+        Ok(())
+    }
+
+    /// Get all chat messages for a content item, ordered by creation time.
+    pub fn get_chat_messages(
+        &self,
+        content_id: &str,
+    ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT role, message FROM chat_messages WHERE content_id = ?1 ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![content_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Delete all chat messages for a content item.
+    pub fn delete_chat_messages(
+        &self,
+        content_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "DELETE FROM chat_messages WHERE content_id = ?1",
+            params![content_id],
+        )?;
+        Ok(())
     }
 
     // ========== App Settings ==========

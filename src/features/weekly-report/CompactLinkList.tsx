@@ -27,7 +27,7 @@ export function CompactLinkList({ items }: CompactLinkListProps) {
       </div>
 
       {/* Link list */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 overflow-hidden divide-y divide-gray-50 dark:divide-slate-700/50">
+      <div className="glass rounded-2xl overflow-hidden divide-y divide-gray-50 dark:divide-slate-700/50">
         {items.map((item, idx) => (
           <LinkRow key={item.id} item={item} index={idx} />
         ))}
@@ -52,13 +52,13 @@ function LinkRow({ item, index }: { item: CapturedContent; index: number }) {
       initial={{ opacity: 0, x: -4 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.15, delay: index * 0.02 }}
-      className="flex items-center gap-2 px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group"
+      className="flex items-center gap-2 px-2.5 py-2 hover:bg-white/60 dark:hover:bg-white/[0.06]/50 transition-colors cursor-pointer group"
       onClick={(e) => {
         if (!url) e.preventDefault();
       }}
     >
       {/* Favicon or fallback icon */}
-      <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 bg-gray-50 dark:bg-slate-700 overflow-hidden">
+      <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 bg-white/40 dark:bg-white/[0.04] overflow-hidden">
         {faviconUrl ? (
           <img
             src={faviconUrl}

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface ImagePreviewProps {
   src: string;
@@ -15,7 +16,7 @@ export function ImagePreview({ src, onClose }: ImagePreviewProps) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
@@ -37,6 +38,7 @@ export function ImagePreview({ src, onClose }: ImagePreviewProps) {
         className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -106,8 +106,8 @@ fn compute_dedup_keys(event: &serde_json::Value) -> Vec<String> {
     }
 }
 
-/// Async function to fetch URL content via Jina Reader.
-/// Runs as a standalone async task so it has proper async runtime context.
+/// Async function to fetch URL content.
+/// Uses smart routing: WeChat → direct HTML, Twitter → fxtwitter API, others → Jina.
 async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, app: AppHandle) {
     log::info!(
         "Starting URL fetch task for {} (url={})",
@@ -116,7 +116,9 @@ async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, a
     );
 
     let reader = UrlReader::new();
-    match reader.fetch_content(&url).await {
+    let result = reader.fetch_content(&url).await;
+
+    match result {
         Ok(result) => {
             let repo = Repository::new(db);
             if let Err(e) = repo.update_content_for_url(
@@ -148,6 +150,17 @@ async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, a
                 content_id,
                 url,
                 e
+            );
+            // Mark as failed so UI stops showing "读取中" spinner
+            let repo = Repository::new(db);
+            let fail_msg = format!("[读取失败] {}\n\n原始链接: {}", e, url);
+            let _ = repo.update_content_for_url(&content_id, &fail_msg, &url);
+            let _ = app.emit(
+                "content:url-fetched",
+                serde_json::json!({
+                    "id": content_id,
+                    "failed": true,
+                }),
             );
         }
     }
@@ -220,8 +233,19 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
             );
 
             // For URL content, spawn background fetch via Jina Reader
+            // Only fetch if raw_text is empty or equals source_url (not fetched yet)
             if content.content_type.as_str() == "url" {
                 if let Some(url) = content.source_url {
+                    // Check if content has been fetched already
+                    let needs_fetch = content.raw_text.as_ref()
+                        .map(|text| text.is_empty() || text.as_str() == url)
+                        .unwrap_or(true);
+
+                    if !needs_fetch {
+                        log::info!("URL {} already fetched, skipping", url);
+                        return;
+                    }
+
                     // Check if URL reading is enabled (default: true)
                     let repo = Repository::new(db.clone());
                     let url_reading_enabled = repo
@@ -255,6 +279,44 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
                     );
                 }
             }
+
+            // For image content, auto-run OCR in background
+            if content.content_type.as_str() == "image" {
+                if let Some(image_path) = content.image_path {
+                    let content_id = content.id.clone();
+                    let db_clone = db.clone();
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        log::info!("[OCR] Auto-OCR starting for {}", content_id);
+                        match tokio::task::spawn_blocking({
+                            let path = image_path.clone();
+                            move || super::ocr::recognize_text(&path)
+                        }).await {
+                            Ok(Ok(text)) => {
+                                let repo = Repository::new(db_clone);
+                                if let Err(e) = repo.update_raw_text(&content_id, &text) {
+                                    log::error!("[OCR] Failed to save: {}", e);
+                                } else {
+                                    log::info!("[OCR] Auto-OCR done for {}: {} chars", content_id, text.len());
+                                    let _ = app_clone.emit(
+                                        "content:ocr-done",
+                                        serde_json::json!({
+                                            "id": content_id,
+                                            "text_length": text.len(),
+                                        }),
+                                    );
+                                }
+                            }
+                            Ok(Err(e)) => {
+                                log::info!("[OCR] No text found in {}: {}", content_id, e);
+                            }
+                            Err(e) => {
+                                log::error!("[OCR] Task failed for {}: {}", content_id, e);
+                            }
+                        }
+                    });
+                }
+            }
         }
         Err(e) => {
             if e.contains("Duplicate content") {
@@ -265,6 +327,195 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
         }
     }
 }
+
+/// Store pending capture data in AppState for the bubble window to retrieve.
+fn store_pending_capture(app: &AppHandle, data: &serde_json::Value) {
+    let pending_arc = app.state::<AppState>().pending_capture.clone();
+    let guard = pending_arc.lock();
+    if let Ok(mut pending) = guard {
+        *pending = Some(data.clone());
+    }
+}
+
+/// Make the window fully transparent on macOS (no opaque background).
+/// Used for circle bubble mode so CSS can fully control the visual appearance
+/// and animate from circle to capsule without native view interference.
+/// IMPORTANT: All macOS window API calls MUST run on the main thread.
+/// This function schedules the work on the main thread via dispatch crate.
+#[cfg(target_os = "macos")]
+fn make_window_transparent(win: &tauri::WebviewWindow) {
+    use raw_window_handle::HasWindowHandle;
+
+    let handle = match win.window_handle() {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+
+    let appkit = match handle.as_raw() {
+        raw_window_handle::RawWindowHandle::AppKit(h) => h,
+        _ => return,
+    };
+
+    let ns_view_ptr = appkit.ns_view.as_ptr() as usize;
+
+    // Use dispatch crate to ensure main thread execution
+    dispatch::Queue::main().exec_async(move || {
+        unsafe {
+            use objc2::runtime::{AnyClass, AnyObject};
+
+            let ns_view: &AnyObject = &*(ns_view_ptr as *const AnyObject);
+
+            let ns_window: *const AnyObject = objc2::msg_send![ns_view, window];
+            if ns_window.is_null() {
+                return;
+            }
+            let ns_window: &AnyObject = &*ns_window;
+
+            let _: () = objc2::msg_send![ns_window, setOpaque: false];
+            let _: () = objc2::msg_send![ns_window, setHasShadow: false];
+
+            let ns_color_cls = AnyClass::get("NSColor").unwrap();
+            let clear_color: *const AnyObject = objc2::msg_send![ns_color_cls, clearColor];
+            let _: () = objc2::msg_send![ns_window, setBackgroundColor: clear_color];
+        }
+    });
+
+    log::info!("Window transparency dispatched to main thread");
+}
+
+/// Dynamically create and show the bubble window at the bottom-right of the screen.
+/// If a bubble window already exists, close it first to avoid duplicates.
+fn show_bubble_window(app: &AppHandle) {
+    use tauri::WebviewWindowBuilder;
+    use tauri::WebviewUrl;
+
+    // Close existing bubble if any, with retry to ensure it's fully closed
+    if let Some(existing) = app.get_webview_window("bubble") {
+        let _ = existing.destroy();
+        // Wait and verify the window is actually gone
+        for _ in 0..10 {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            if app.get_webview_window("bubble").is_none() {
+                break;
+            }
+        }
+        // If still exists, skip creating new one
+        if app.get_webview_window("bubble").is_some() {
+            log::warn!("Bubble window still exists after destroy, skipping creation");
+            return;
+        }
+    }
+
+    // Read bubble style and position from settings
+    let (bubble_style, bubble_position) = {
+        let state = app.state::<AppState>();
+        let repo = Repository::new(state.db.clone());
+        let style = repo.get_setting("bubble_style")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "circle".to_string());
+        let position = repo.get_setting("bubble_position")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "bottom-right".to_string());
+        (style, position)
+    };
+
+    let is_circle = bubble_style == "circle";
+    // Circle mode: start at capsule size so CSS can animate circle→capsule
+    let win_w: f64 = if is_circle { 320.0 } else { 340.0 };
+    let win_h: f64 = if is_circle { 48.0 } else { 72.0 };
+
+    // Determine position based on bubble_position setting
+    let (x, y) = if let Some(main_win) = app.get_webview_window("main") {
+        let monitor = main_win.primary_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| main_win.current_monitor().ok().flatten())
+            .or_else(|| main_win.available_monitors().ok().and_then(|m| m.into_iter().next()));
+
+        if let Some(monitor) = monitor {
+            let screen = monitor.size();
+            let scale = monitor.scale_factor();
+            let screen_w = screen.width as f64 / scale;
+            let screen_h = screen.height as f64 / scale;
+            let margin = 20.0;
+            let menu_bar_h = 30.0; // macOS menu bar height
+
+            let x = match bubble_position.as_str() {
+                "bottom-left" | "top-left" => margin,
+                "bottom-center" | "top-center" => {
+                    if is_circle {
+                        // Center: align the 48px circle visually at center
+                        (screen_w - 48.0) / 2.0 - (win_w - 48.0) / 2.0
+                    } else {
+                        (screen_w - win_w) / 2.0
+                    }
+                },
+                _ => screen_w - win_w - margin, // bottom-right, top-right, default
+            };
+
+            let y = match bubble_position.as_str() {
+                "top-left" | "top-center" | "top-right" => margin + menu_bar_h,
+                _ => screen_h - win_h - margin - 60.0, // bottom-*, default (60 for dock)
+            };
+
+            log::info!(
+                "Bubble position: ({}, {}), style={}, pos={}, size={}x{}",
+                x, y, bubble_style, bubble_position, win_w, win_h
+            );
+            (x, y)
+        } else {
+            (500.0, 500.0)
+        }
+    } else {
+        (500.0, 500.0)
+    };
+
+    // Create the bubble window dynamically
+    match WebviewWindowBuilder::new(
+        app,
+        "bubble",
+        WebviewUrl::App("/bubble".into()),
+    )
+    .title("")
+    .inner_size(win_w, win_h)
+    .position(x, y)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(true)
+    .focused(true)
+    .build()
+    {
+        Ok(win) => {
+            #[cfg(target_os = "macos")]
+            {
+                if is_circle {
+                    // Circle mode: make window fully transparent (no vibrancy).
+                    // CSS handles the glass effect + circle→capsule animation.
+                    make_window_transparent(&win);
+                } else {
+                    // Bar mode: use native vibrancy for glass background
+                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                    let _ = apply_vibrancy(
+                        &win,
+                        NSVisualEffectMaterial::HudWindow,
+                        None,
+                        Some(16.0),
+                    );
+                }
+            }
+            log::info!("Bubble window created (style={})", bubble_style);
+        }
+        Err(e) => {
+            log::error!("Failed to create bubble window: {}", e);
+        }
+    }
+}
+
 
 pub struct CaptureDetector {
     clipboard_watcher: ClipboardWatcher,
@@ -296,7 +547,40 @@ impl CaptureDetector {
                 };
 
                 if should_save {
-                    handle_auto_save(&app_for_clipboard, data);
+                    // Check capture mode: "confirm" requires user to click floating bubble
+                    let capture_mode = {
+                        let state = app_for_clipboard.state::<AppState>();
+                        let repo = Repository::new(state.db.clone());
+                        repo.get_setting("capture_mode")
+                            .ok()
+                            .flatten()
+                            .unwrap_or_else(|| "confirm".to_string())
+                    };
+
+                    if capture_mode == "confirm" {
+                        // Store pending data in AppState so BubbleView can retrieve it
+                        store_pending_capture(&app_for_clipboard, &data);
+
+                        // Also emit event for the BubbleView listener
+                        log::info!("Capture pending confirmation (mode=confirm)");
+                        if let Err(e) = app_for_clipboard.emit("capture:pending", &data) {
+                            log::error!("Failed to emit capture:pending: {}", e);
+                        }
+
+                        // Show the bubble window on the main thread after a short delay.
+                        // macOS window APIs (setHasShadow, setBackgroundColor, etc.)
+                        // MUST be called from the main thread.
+                        let app_bubble = app_for_clipboard.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(150));
+                            let app_main = app_bubble.clone();
+                            let _ = app_bubble.run_on_main_thread(move || {
+                                show_bubble_window(&app_main);
+                            });
+                        });
+                    } else {
+                        handle_auto_save(&app_for_clipboard, data);
+                    }
                 }
             }
         });
@@ -313,6 +597,7 @@ impl CaptureDetector {
                 };
 
                 if should_save {
+                    // Screenshots always auto-save (no floating bubble needed)
                     handle_auto_save(&app_for_screenshot, data);
                 }
             }

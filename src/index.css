@@ -3,6 +3,35 @@
 /* Dark mode: use class strategy so user can toggle manually */
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  /* Glass effect tokens */
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.6);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-border-glow: rgba(255, 255, 255, 0.8);
+  --glass-blur: 20px;
+  --glass-blur-heavy: 28px;
+  --glass-blur-elevated: 40px;
+  --glass-shadow: 0 8px 32px rgba(99, 102, 241, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --glass-shadow-elevated: 0 24px 80px rgba(0, 0, 0, 0.18), 0 0 40px rgba(99, 102, 241, 0.06);
+  --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.dark {
+  --glass-bg: rgba(15, 15, 30, 0.65);
+  --glass-bg-heavy: rgba(15, 15, 30, 0.75);
+  --glass-bg-elevated: rgba(15, 15, 30, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-glow: rgba(255, 255, 255, 0.18);
+  --glass-blur: 20px;
+  --glass-blur-heavy: 28px;
+  --glass-blur-elevated: 40px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --glass-shadow-elevated: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.08);
+  --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -16,6 +45,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 /* Smooth theme transition */
@@ -23,15 +53,131 @@ html {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Transparent background for bubble & spotlight overlay windows */
+html.transparent-window,
+html.transparent-window body,
+html.transparent-window #root {
+  background: transparent !important;
+}
+
+/* ---- Glass utility class ---- */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-inner-glow);
+}
+
+.glass-heavy {
+  background: var(--glass-bg-heavy);
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border: 1px solid var(--glass-border-glow);
+  box-shadow: var(--glass-shadow), var(--glass-inner-glow);
+}
+
+/* Elevated glass — for overlays, modals, detail panels */
+.glass-elevated {
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(var(--glass-blur-elevated));
+  -webkit-backdrop-filter: blur(var(--glass-blur-elevated));
+  border: 1px solid var(--glass-border-glow);
+  box-shadow: var(--glass-shadow-elevated), var(--glass-inner-glow);
+}
+
+/* ---- Floating background orbs ---- */
+@keyframes float-slow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -40px) scale(1.05); }
+  50% { transform: translate(-20px, 20px) scale(0.95); }
+  75% { transform: translate(15px, 35px) scale(1.02); }
+}
+
+@keyframes float-medium {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.08); }
+  66% { transform: translate(25px, -25px) scale(0.96); }
+}
+
+@keyframes float-fast {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-30px, -30px) scale(1.1); }
+}
+
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.5), transparent 70%);
+  top: -80px;
+  right: -60px;
+  animation: float-slow 20s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.45), transparent 70%);
+  bottom: 15%;
+  left: -80px;
+  animation: float-medium 15s ease-in-out infinite;
+}
+
+.orb-3 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.4), transparent 70%);
+  top: 35%;
+  right: 5%;
+  animation: float-fast 12s ease-in-out infinite;
+}
+
+.orb-4 {
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.35), transparent 70%);
+  bottom: -40px;
+  right: 25%;
+  animation: float-slow 18s ease-in-out infinite reverse;
+}
+
+/* Dark mode orbs — richer saturation for contrast against dark glass */
+.dark .orb { opacity: 0.6; filter: blur(70px); }
+.dark .orb-1 {
+  width: 450px; height: 450px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.7), transparent 70%);
+}
+.dark .orb-2 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.6), transparent 70%);
+}
+.dark .orb-3 {
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.5), transparent 70%);
+}
+.dark .orb-4 {
+  width: 350px; height: 350px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.45), transparent 70%);
+}
+
 /* Gentle highlight fade animation for navigated-to content cards */
 @keyframes highlight-fade {
   0% {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(59, 130, 246, 0.15);
-    background-color: rgba(239, 246, 255, 0.6);
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.35), 0 4px 16px rgba(129, 140, 248, 0.15);
+    background-color: rgba(238, 242, 255, 0.7);
   }
   50% {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), 0 4px 12px rgba(59, 130, 246, 0.08);
-    background-color: rgba(239, 246, 255, 0.3);
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15), 0 4px 12px rgba(129, 140, 248, 0.06);
+    background-color: rgba(238, 242, 255, 0.35);
   }
   100% {
     box-shadow: none;
@@ -43,14 +189,30 @@ html {
   animation: highlight-fade 3.5s ease-out forwards;
 }
 
-/* Custom scrollbar for dark mode */
-.dark ::-webkit-scrollbar {
-  width: 6px;
+/* Card hover lift effect */
+@keyframes subtle-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(129, 140, 248, 0.05); }
+  50% { box-shadow: 0 0 20px rgba(129, 140, 248, 0.1); }
 }
-.dark ::-webkit-scrollbar-track {
-  background: #1e293b;
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 5px;
 }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+
 .dark ::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
 }

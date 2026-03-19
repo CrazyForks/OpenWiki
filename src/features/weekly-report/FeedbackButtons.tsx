@@ -92,12 +92,12 @@ function FeedbackButton({
 
   const variantClasses = {
     interested: {
-      idle: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20",
-      confirming: "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
+      idle: "bg-indigo-500/10 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-blue-100 dark:hover:bg-blue-500/20",
+      confirming: "bg-blue-100 dark:bg-blue-500/20 text-indigo-600 dark:text-indigo-400",
       confirmed: "bg-blue-500 text-white",
     },
     dismissed: {
-      idle: "bg-gray-50 dark:bg-slate-700 text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-600",
+      idle: "bg-white/40 dark:bg-white/[0.04] text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-600",
       confirming: "bg-gray-100 dark:bg-slate-600 text-gray-500 dark:text-slate-400",
       confirmed: "bg-gray-400 dark:bg-slate-500 text-white",
     },

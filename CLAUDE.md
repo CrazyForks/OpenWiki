@@ -9,6 +9,19 @@
 - You may run tests freely
 - You may create, delete, and modify files within this project directory
 
+## Decision Protocol
+
+- For routine development tasks (coding, debugging, refactoring, testing): proceed autonomously, no need to ask
+- For important project direction decisions (architecture changes, new major dependencies, data model redesign, feature scope changes): ask the user first, present 2-3 options with a recommended choice clearly marked
+- If the user does not respond within 3 minutes: proceed with the recommended option and note what was chosen
+- The user is a beginner — always explain decisions in plain Chinese, avoid jargon
+
+## GitHub
+
+- Repository: https://github.com/kdsz001/xiaoyun (private)
+- When user says "存一下" or "保存进度": commit + push to GitHub
+- Write clear commit messages in conventional format (feat/fix/refactor)
+
 ## Project Info
 
 - Tauri 2 desktop app (Rust + React/TypeScript)

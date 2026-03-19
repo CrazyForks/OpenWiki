@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getSettings, updateSetting } from "../services/settingsService";
+import { getSettings, updateSetting, checkXReaderStatus, type XReaderStatus } from "../services/settingsService";
 
 export type AIProvider = "anthropic" | "openai" | "openrouter";
 
@@ -70,7 +70,15 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
 
 const VALID_PROVIDERS: AIProvider[] = ["anthropic", "openai", "openrouter"];
 
+export type CaptureMode = "auto" | "confirm";
+export type BubbleStyle = "circle" | "bar";
+export type BubblePosition = "bottom-right" | "bottom-center" | "bottom-left" | "top-right" | "top-center" | "top-left";
 export type ThemeMode = "light" | "dark" | "system";
+
+const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
+  "bottom-right", "bottom-center", "bottom-left",
+  "top-right", "top-center", "top-left",
+];
 
 function applyTheme(theme: ThemeMode) {
   const isDark =
@@ -115,6 +123,9 @@ interface SettingsState {
   model: string;
   theme: ThemeMode;
   captureEnabled: boolean;
+  captureMode: CaptureMode;
+  bubbleStyle: BubbleStyle;
+  bubblePosition: BubblePosition;
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
   countdownDuration: number;
@@ -122,6 +133,7 @@ interface SettingsState {
   totalItems: number;
   diskUsageMB: number;
   isLoaded: boolean;
+  xreaderStatus: XReaderStatus | null;
 
   loadFromDB: () => Promise<void>;
   setApiKey: (key: string) => void;
@@ -129,11 +141,15 @@ interface SettingsState {
   setModel: (model: string) => void;
   setTheme: (theme: ThemeMode) => void;
   setCaptureEnabled: (enabled: boolean) => void;
+  setCaptureMode: (mode: CaptureMode) => void;
+  setBubbleStyle: (style: BubbleStyle) => void;
+  setBubblePosition: (position: BubblePosition) => void;
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
   setCountdownDuration: (seconds: number) => void;
   setScreenshotDir: (dir: string) => void;
   setStorageInfo: (totalItems: number, diskUsageMB: number) => void;
+  loadXReaderStatus: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -142,6 +158,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   model: "claude-sonnet-4-20250514",
   theme: "system",
   captureEnabled: true,
+  captureMode: "confirm" as CaptureMode,
+  bubbleStyle: "circle" as BubbleStyle,
+  bubblePosition: "bottom-right" as BubblePosition,
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
   countdownDuration: 5,
@@ -149,6 +168,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
+  xreaderStatus: null,
 
   loadFromDB: async () => {
     try {
@@ -172,6 +192,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         model,
         theme,
         captureEnabled: settings.capture_enabled !== "false",
+        captureMode: (settings.capture_mode === "auto" ? "auto" : "confirm") as CaptureMode,
+        bubbleStyle: (settings.bubble_style === "bar" ? "bar" : "circle") as BubbleStyle,
+        bubblePosition: (VALID_BUBBLE_POSITIONS.includes(settings.bubble_position as BubblePosition)
+          ? settings.bubble_position
+          : "bottom-right") as BubblePosition,
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
@@ -227,6 +252,27 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     );
   },
 
+  setCaptureMode: (mode) => {
+    set({ captureMode: mode });
+    updateSetting("capture_mode", mode).catch((e) =>
+      console.error("Failed to save capture_mode:", e)
+    );
+  },
+
+  setBubbleStyle: (style) => {
+    set({ bubbleStyle: style });
+    updateSetting("bubble_style", style).catch((e) =>
+      console.error("Failed to save bubble_style:", e)
+    );
+  },
+
+  setBubblePosition: (position) => {
+    set({ bubblePosition: position });
+    updateSetting("bubble_position", position).catch((e) =>
+      console.error("Failed to save bubble_position:", e)
+    );
+  },
+
   setSensitiveFilterEnabled: (enabled) => {
     set({ sensitiveFilterEnabled: enabled });
     updateSetting("sensitive_filter_enabled", String(enabled)).catch((e) =>
@@ -251,4 +297,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setScreenshotDir: (dir) => set({ screenshotDir: dir }),
   setStorageInfo: (totalItems, diskUsageMB) =>
     set({ totalItems, diskUsageMB }),
+
+  loadXReaderStatus: async () => {
+    try {
+      const status = await checkXReaderStatus();
+      set({ xreaderStatus: status });
+    } catch (e) {
+      console.error("Failed to load x-reader status:", e);
+    }
+  },
 }));

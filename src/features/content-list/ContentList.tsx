@@ -51,26 +51,29 @@ export function ContentList() {
   }, [loadContent]);
 
   // Listen for URL content fetch completion from Rust backend
-  const updateContent = useContentStore((s) => s.updateContent);
+  // When URL content is fetched, reload all content from DB to get the updated raw_text.
   useEffect(() => {
-    const unlisten = listen<{ id: string; raw_text: string; source_url: string }>(
+    const unlisten = listen<{ id: string }>(
       "content:url-fetched",
-      (event) => {
-        const { id, raw_text, source_url } = event.payload;
-        const existing = useContentStore.getState().contents.find((c) => c.id === id);
-        if (existing) {
-          updateContent({
-            ...existing,
-            raw_text,
-            source_url,
-          });
-        } else {
-          loadContent();
-        }
+      (_event) => {
+        console.log("URL content fetched, reloading content list");
+        loadContent();
       }
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [updateContent, loadContent]);
+  }, [loadContent]);
+
+  // Listen for OCR completion — reload to show recognized text
+  useEffect(() => {
+    const unlisten = listen<{ id: string }>(
+      "content:ocr-done",
+      (_event) => {
+        console.log("OCR done, reloading content list");
+        loadContent();
+      }
+    );
+    return () => { unlisten.then((fn) => fn()); };
+  }, [loadContent]);
 
   // Handle scroll-to-item when scrollToId changes
   useEffect(() => {
@@ -123,17 +126,17 @@ export function ContentList() {
     return (
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between px-1">
-          <div className="h-6 w-32 bg-gray-200 dark:bg-slate-700 rounded animate-pulse" />
-          <div className="h-5 w-16 bg-gray-200 dark:bg-slate-700 rounded-full animate-pulse" />
+          <div className="h-6 w-32 bg-white/50 dark:bg-white/[0.06] rounded-lg animate-pulse" />
+          <div className="h-5 w-16 bg-white/50 dark:bg-white/[0.06] rounded-full animate-pulse" />
         </div>
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-gray-100 dark:border-slate-700">
+          <div key={i} className="glass rounded-2xl p-4">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
+              <div className="w-8 h-8 bg-indigo-500/10 dark:bg-indigo-500/10 rounded-xl animate-pulse" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-3/4 animate-pulse" />
-                <div className="h-3 bg-gray-100 dark:bg-slate-700 rounded w-1/2 animate-pulse" />
-                <div className="h-3 bg-gray-100 dark:bg-slate-700 rounded w-1/3 animate-pulse" />
+                <div className="h-4 bg-gray-200/50 dark:bg-white/[0.06] rounded w-3/4 animate-pulse" />
+                <div className="h-3 bg-gray-200/30 dark:bg-white/[0.04] rounded w-1/2 animate-pulse" />
+                <div className="h-3 bg-gray-200/30 dark:bg-white/[0.04] rounded w-1/3 animate-pulse" />
               </div>
             </div>
           </div>
@@ -145,8 +148,7 @@ export function ContentList() {
   if (contents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-80">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-500/10 dark:to-indigo-500/10
-                        flex items-center justify-center mb-5">
+        <div className="w-20 h-20 rounded-2xl glass flex items-center justify-center mb-5">
           <span className="text-4xl">📭</span>
         </div>
         <div className="font-medium text-gray-600 dark:text-slate-300 mb-2">
@@ -169,7 +171,7 @@ export function ContentList() {
     <div className="p-4 space-y-3">
       {/* Header with filter tabs */}
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 p-0.5 rounded-xl glass">
           {FILTER_TABS.map((tab) => {
             const count = typeCounts[tab.value] || 0;
             if (tab.value !== "all" && count === 0) return null;
@@ -181,8 +183,8 @@ export function ContentList() {
                 className={`
                   flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all
                   ${isActive
-                    ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                    : "text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50"
+                    ? "bg-white/80 dark:bg-white/[0.1] text-indigo-600 dark:text-indigo-400 shadow-sm"
+                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
                   }
                 `}
               >
@@ -191,8 +193,8 @@ export function ContentList() {
                 <span className={`
                   ml-0.5 px-1.5 py-0.5 rounded-full text-[10px]
                   ${isActive
-                    ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                    : "bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500"
+                    ? "bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400"
+                    : "bg-gray-200/50 dark:bg-white/[0.06] text-gray-400 dark:text-slate-500"
                   }
                 `}>
                   {count}
@@ -216,7 +218,7 @@ export function ContentList() {
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {filteredContents.map((content) => (
             <ContentCard
               key={content.id}

@@ -86,6 +86,7 @@ impl ClipboardWatcher {
         std::thread::spawn(move || {
             let mut last_content_hash: Option<String> = None;
 
+            eprintln!("[xiaoyun] Clipboard watcher thread started ({}ms)", interval);
             log::info!(
                 "Clipboard watcher started with {}ms polling interval",
                 interval
@@ -152,6 +153,7 @@ impl ClipboardWatcher {
                             };
 
                             if is_new {
+                                eprintln!("[xiaoyun] New clipboard text detected: {} chars", text.len());
                                 last_content_hash = Some(hash);
                                 let source_app = detect_frontmost_app();
 
@@ -162,11 +164,21 @@ impl ClipboardWatcher {
                                     text.clone()
                                 };
 
+                                // Cap raw_text sent via IPC to avoid crashes with very large clipboard content.
+                                // The full text is still used for hashing/dedup; storage will use this capped version.
+                                const MAX_RAW_TEXT_CHARS: usize = 50_000;
+                                let raw_text_for_event = if text.chars().count() > MAX_RAW_TEXT_CHARS {
+                                    let truncated: String = text.chars().take(MAX_RAW_TEXT_CHARS).collect();
+                                    truncated
+                                } else {
+                                    text.clone()
+                                };
+
                                 let event = serde_json::json!({
                                     "content_type": "text",
                                     "preview": preview,
                                     "source_app": source_app,
-                                    "raw_text": text,
+                                    "raw_text": raw_text_for_event,
                                     "image_path": null,
                                     "from_clipboard": true
                                 });
