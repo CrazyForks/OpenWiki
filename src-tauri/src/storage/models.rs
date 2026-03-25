@@ -46,6 +46,8 @@ pub struct CapturedContent {
     pub is_deleted: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub digested_at: Option<String>,
+    pub digest_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

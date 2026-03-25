@@ -73,6 +73,7 @@ const VALID_PROVIDERS: AIProvider[] = ["anthropic", "openai", "openrouter"];
 export type CaptureMode = "auto" | "confirm";
 export type BubbleStyle = "circle" | "bar";
 export type BubblePosition = "bottom-right" | "bottom-center" | "bottom-left" | "top-right" | "top-center" | "top-left";
+export type DefaultAction = "save" | "dismiss";
 export type ThemeMode = "light" | "dark" | "system";
 
 const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
@@ -126,6 +127,7 @@ interface SettingsState {
   captureMode: CaptureMode;
   bubbleStyle: BubbleStyle;
   bubblePosition: BubblePosition;
+  defaultAction: DefaultAction;
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
   countdownDuration: number;
@@ -144,6 +146,7 @@ interface SettingsState {
   setCaptureMode: (mode: CaptureMode) => void;
   setBubbleStyle: (style: BubbleStyle) => void;
   setBubblePosition: (position: BubblePosition) => void;
+  setDefaultAction: (action: DefaultAction) => void;
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
   setCountdownDuration: (seconds: number) => void;
@@ -161,6 +164,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   captureMode: "confirm" as CaptureMode,
   bubbleStyle: "circle" as BubbleStyle,
   bubblePosition: "bottom-right" as BubblePosition,
+  defaultAction: "dismiss" as DefaultAction,
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
   countdownDuration: 5,
@@ -197,6 +201,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         bubblePosition: (VALID_BUBBLE_POSITIONS.includes(settings.bubble_position as BubblePosition)
           ? settings.bubble_position
           : "bottom-right") as BubblePosition,
+        defaultAction: (settings.default_action === "save" ? "save" : "dismiss") as DefaultAction,
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
@@ -270,6 +275,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ bubblePosition: position });
     updateSetting("bubble_position", position).catch((e) =>
       console.error("Failed to save bubble_position:", e)
+    );
+  },
+
+  setDefaultAction: (action) => {
+    set({ defaultAction: action });
+    updateSetting("default_action", action).catch((e) =>
+      console.error("Failed to save default_action:", e)
     );
   },
 

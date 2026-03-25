@@ -26,6 +26,18 @@ impl Database {
         Ok(db)
     }
 
+    /// Create an in-memory database for testing.
+    #[cfg(test)]
+    pub fn new_in_memory() -> Result<Self, Box<dyn std::error::Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        let db = Database {
+            conn: Mutex::new(conn),
+        };
+        db.run_migrations()?;
+        Ok(db)
+    }
+
     fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
         let data_dir = dirs::data_dir()
             .ok_or("Could not find data directory")?
@@ -63,6 +75,19 @@ impl Database {
             let migration_003 = include_str!("migrations/003_add_chat_messages.sql");
             conn.execute_batch(migration_003)?;
             log::info!("Migration 003 applied: added chat_messages table");
+        }
+
+        // Migration 004: Add digest fields (digested_at, digest_action)
+        let has_digested_at: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('captured_content') WHERE name = 'digested_at'")?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_digested_at {
+            let migration_004 = include_str!("migrations/004_add_digest_fields.sql");
+            conn.execute_batch(migration_004)?;
+            log::info!("Migration 004 applied: added digest fields");
         }
 
         log::info!("Database migrations completed successfully");

@@ -57,7 +57,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content WHERE is_deleted = 0 ORDER BY captured_at DESC LIMIT ?1 OFFSET ?2"
         )?;
 
@@ -78,6 +78,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -101,7 +103,7 @@ impl Repository {
             .map_err(|e| format!("Lock error: {}", e))?;
         let pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content
              WHERE is_deleted = 0
                AND (raw_text LIKE ?1 OR source_url LIKE ?1 OR source_app LIKE ?1 OR user_note LIKE ?1)
@@ -125,6 +127,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -215,7 +219,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1"
         )?;
 
@@ -236,6 +240,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -272,7 +278,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content
              WHERE is_deleted = 0 AND captured_at >= ?1 AND captured_at <= ?2
              ORDER BY captured_at DESC"
@@ -295,6 +301,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -316,7 +324,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content WHERE id = ?1 AND is_deleted = 0"
         )?;
 
@@ -337,6 +345,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -720,7 +730,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
              FROM captured_content WHERE DATE(captured_at) = ?1 AND is_deleted = 0 ORDER BY captured_at ASC",
         )?;
 
@@ -741,6 +751,8 @@ impl Repository {
                 is_deleted: row.get::<_, i32>(12)? != 0,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
             })
         })?;
 
@@ -749,6 +761,138 @@ impl Repository {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    // ========== Digest ==========
+
+    /// Get undigested content items, ordered by oldest first.
+    /// Used by the "消化" feature to surface content for review.
+    pub fn get_undigested_content(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<CapturedContent>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
+             FROM captured_content
+             WHERE is_deleted = 0 AND digested_at IS NULL
+             ORDER BY captured_at ASC LIMIT ?1"
+        )?;
+
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(CapturedContent {
+                id: row.get(0)?,
+                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
+                raw_text: row.get(2)?,
+                image_path: row.get(3)?,
+                thumbnail_path: row.get(4)?,
+                source_app: row.get(5)?,
+                source_bundle_id: row.get(6)?,
+                source_url: row.get(7)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get undigested content from the last N days, ordered oldest first.
+    pub fn get_undigested_content_recent(
+        &self,
+        days: i64,
+    ) -> Result<Vec<CapturedContent>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action
+             FROM captured_content
+             WHERE is_deleted = 0 AND digested_at IS NULL
+               AND captured_at >= datetime('now', '-' || ?1 || ' days')
+             ORDER BY captured_at ASC"
+        )?;
+
+        let rows = stmt.query_map(params![days], |row| {
+            Ok(CapturedContent {
+                id: row.get(0)?,
+                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
+                raw_text: row.get(2)?,
+                image_path: row.get(3)?,
+                thumbnail_path: row.get(4)?,
+                source_app: row.get(5)?,
+                source_bundle_id: row.get(6)?,
+                source_url: row.get(7)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Mark a content item as digested with the given action (keep/archive/pin).
+    pub fn update_digest_action(
+        &self,
+        id: &str,
+        action: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let rows = conn.execute(
+            "UPDATE captured_content SET digested_at = datetime('now'), digest_action = ?1, updated_at = datetime('now') WHERE id = ?2 AND is_deleted = 0",
+            params![action, id],
+        )?;
+        if rows == 0 {
+            return Err(format!("Content not found: {}", id).into());
+        }
+        Ok(())
+    }
+
+    /// Count total undigested content items.
+    pub fn count_undigested(&self) -> Result<i64, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM captured_content WHERE is_deleted = 0 AND digested_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
     }
 
     // ========== App Settings ==========
@@ -811,5 +955,177 @@ impl Repository {
             params![key, value],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::database::Database;
+    use crate::storage::models::{CapturedContent, ContentType};
+
+    /// Create an in-memory database with all migrations applied.
+    fn test_db() -> Arc<Database> {
+        let db = Database::new_in_memory().expect("Failed to create test DB");
+        Arc::new(db)
+    }
+
+    fn make_content(id: &str, captured_at: &str) -> CapturedContent {
+        CapturedContent {
+            id: id.to_string(),
+            content_type: ContentType::Text,
+            raw_text: Some(format!("Test content {}", id)),
+            image_path: None,
+            thumbnail_path: None,
+            source_app: "TestApp".to_string(),
+            source_bundle_id: None,
+            source_url: None,
+            user_note: None,
+            captured_at: captured_at.to_string(),
+            content_hash: format!("hash_{}", id),
+            byte_size: 100,
+            is_deleted: false,
+            created_at: captured_at.to_string(),
+            updated_at: captured_at.to_string(),
+            digested_at: None,
+            digest_action: None,
+        }
+    }
+
+    #[test]
+    fn test_get_undigested_returns_oldest_first() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        // Insert 5 items with different timestamps
+        for i in 1..=5 {
+            let content = make_content(
+                &format!("item_{}", i),
+                &format!("2025-01-{:02}T10:00:00", i),
+            );
+            repo.save_content(&content).unwrap();
+        }
+
+        let items = repo.get_undigested_content(3).unwrap();
+        assert_eq!(items.len(), 3);
+        // Should be oldest first
+        assert_eq!(items[0].id, "item_1");
+        assert_eq!(items[1].id, "item_2");
+        assert_eq!(items[2].id, "item_3");
+    }
+
+    #[test]
+    fn test_get_undigested_skips_digested() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        for i in 1..=3 {
+            let content = make_content(
+                &format!("item_{}", i),
+                &format!("2025-01-{:02}T10:00:00", i),
+            );
+            repo.save_content(&content).unwrap();
+        }
+
+        // Digest item_1
+        repo.update_digest_action("item_1", "keep").unwrap();
+
+        let items = repo.get_undigested_content(5).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, "item_2");
+        assert_eq!(items[1].id, "item_3");
+    }
+
+    #[test]
+    fn test_get_undigested_empty_when_all_digested() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        let content = make_content("item_1", "2025-01-01T10:00:00");
+        repo.save_content(&content).unwrap();
+        repo.update_digest_action("item_1", "archive").unwrap();
+
+        let items = repo.get_undigested_content(5).unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_update_digest_keep() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        let content = make_content("item_1", "2025-01-01T10:00:00");
+        repo.save_content(&content).unwrap();
+
+        repo.update_digest_action("item_1", "keep").unwrap();
+
+        // Verify by fetching — it should no longer be undigested
+        let undigested = repo.get_undigested_content(5).unwrap();
+        assert!(undigested.is_empty());
+
+        // Verify the action was set correctly
+        let item = repo.get_content_by_id("item_1").unwrap().unwrap();
+        assert_eq!(item.digest_action.as_deref(), Some("keep"));
+        assert!(item.digested_at.is_some());
+    }
+
+    #[test]
+    fn test_update_digest_archive() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        let content = make_content("item_1", "2025-01-01T10:00:00");
+        repo.save_content(&content).unwrap();
+
+        repo.update_digest_action("item_1", "archive").unwrap();
+
+        let item = repo.get_content_by_id("item_1").unwrap().unwrap();
+        assert_eq!(item.digest_action.as_deref(), Some("archive"));
+        assert!(item.digested_at.is_some());
+    }
+
+    #[test]
+    fn test_update_digest_pin() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        let content = make_content("item_1", "2025-01-01T10:00:00");
+        repo.save_content(&content).unwrap();
+
+        repo.update_digest_action("item_1", "pin").unwrap();
+
+        let item = repo.get_content_by_id("item_1").unwrap().unwrap();
+        assert_eq!(item.digest_action.as_deref(), Some("pin"));
+        assert!(item.digested_at.is_some());
+    }
+
+    #[test]
+    fn test_update_digest_invalid_id() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        let result = repo.update_digest_action("nonexistent", "keep");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_count_undigested() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        for i in 1..=5 {
+            let content = make_content(
+                &format!("item_{}", i),
+                &format!("2025-01-{:02}T10:00:00", i),
+            );
+            repo.save_content(&content).unwrap();
+        }
+
+        assert_eq!(repo.count_undigested().unwrap(), 5);
+
+        repo.update_digest_action("item_1", "archive").unwrap();
+        repo.update_digest_action("item_2", "keep").unwrap();
+
+        assert_eq!(repo.count_undigested().unwrap(), 3);
     }
 }

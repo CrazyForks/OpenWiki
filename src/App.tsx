@@ -3,13 +3,14 @@ import { listen } from "@tauri-apps/api/event";
 import { ContentList } from "./features/content-list/ContentList";
 import { SettingsView } from "./features/settings/SettingsView";
 import { DataHubView } from "./features/data-hub/DataHubView";
+import { DigestView } from "./features/digest/DigestView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
 import { searchContent } from "./services/dataHubService";
 import type { CapturedContent } from "./types/content";
 // FloatingBubble is now a separate system-level window (see BubbleView.tsx)
 
-type TabId = "content" | "datahub" | "settings";
+type TabId = "content" | "digest" | "datahub" | "settings";
 
 interface TabItem {
   id: TabId;
@@ -19,6 +20,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   { id: "content", label: "内容", icon: "📋" },
+  { id: "digest", label: "消化", icon: "🔄" },
   { id: "datahub", label: "数据", icon: "📂" },
   { id: "settings", label: "设置", icon: "⚙️" },
 ];
@@ -58,6 +60,7 @@ function App() {
   // Track scroll positions per tab for restore on switch-back
   const scrollPositions = useRef<Record<TabId, number>>({
     content: 0,
+    digest: 0,
     datahub: 0,
     settings: 0,
   });
@@ -258,6 +261,7 @@ function App() {
       {/* Tab content — relative z-index above orbs */}
       <main className="relative z-[1]">
         {activeTab === "content" && <ContentList />}
+        {activeTab === "digest" && <DigestView />}
         {activeTab === "datahub" && <DataHubView />}
         {activeTab === "settings" && <SettingsView />}
       </main>

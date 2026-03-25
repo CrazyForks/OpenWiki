@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   useSettingsStore,
   MODELS_BY_PROVIDER,
@@ -7,6 +9,7 @@ import {
   type ThemeMode,
   type BubbleStyle,
   type BubblePosition,
+  type DefaultAction,
 } from "../../stores/settingsStore";
 
 const BUBBLE_POSITION_OPTIONS: { value: BubblePosition; label: string; icon: string }[] = [
@@ -50,11 +53,79 @@ export function SettingsView() {
     setBubblePosition,
     setCountdownDuration,
     setSensitiveFilterEnabled,
+    defaultAction,
+    setDefaultAction,
     setUrlReadingEnabled,
     loadXReaderStatus,
   } = useSettingsStore();
 
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // MCP connection state per target
+  type McpTargetId = "claude" | "openclaw";
+  interface McpTargetState {
+    connected: boolean;
+    loading: boolean;
+    message: string | null;
+    error: string | null;
+  }
+  const [mcpStates, setMcpStates] = useState<Record<McpTargetId, McpTargetState>>({
+    claude: { connected: false, loading: false, message: null, error: null },
+    openclaw: { connected: false, loading: false, message: null, error: null },
+  });
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const [mcpGlobalError, setMcpGlobalError] = useState<string | null>(null);
+
+  const updateMcpTarget = (id: McpTargetId, update: Partial<McpTargetState>) => {
+    setMcpStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
+  };
+
+  const loadMcpStatus = useCallback(async () => {
+    for (const target of ["claude", "openclaw"] as McpTargetId[]) {
+      try {
+        const status = await invoke<{ connected: boolean }>("get_mcp_status", { target });
+        updateMcpTarget(target, { connected: status.connected });
+      } catch {
+        // silently fail — target may not be installed
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMcpStatus();
+  }, [loadMcpStatus]);
+
+  const handleConnectMcp = async (target: McpTargetId) => {
+    updateMcpTarget(target, { loading: true, error: null, message: null });
+    try {
+      const msg = await invoke<string>("connect_mcp", { target });
+      updateMcpTarget(target, { loading: false, message: msg, connected: true });
+    } catch (e) {
+      updateMcpTarget(target, { loading: false, error: typeof e === "string" ? e : String(e) });
+    }
+  };
+
+  const handleDisconnectMcp = async (target: McpTargetId) => {
+    updateMcpTarget(target, { loading: true, error: null, message: null });
+    try {
+      await invoke("disconnect_mcp", { target });
+      updateMcpTarget(target, { loading: false, connected: false, message: "已断开连接。" });
+    } catch (e) {
+      updateMcpTarget(target, { loading: false, error: typeof e === "string" ? e : String(e) });
+    }
+  };
+
+  const handleCopySummary = async () => {
+    setMcpGlobalError(null);
+    try {
+      const summary = await invoke<string>("copy_content_summary");
+      await writeText(summary);
+      setSummaryCopied(true);
+      setTimeout(() => setSummaryCopied(false), 2000);
+    } catch (e) {
+      setMcpGlobalError(typeof e === "string" ? e : String(e));
+    }
+  };
 
   const availableModels = MODELS_BY_PROVIDER[provider];
 
@@ -392,6 +463,41 @@ export function SettingsView() {
             </div>
           )}
 
+          {/* Default Action (only when confirm mode) */}
+          {captureMode === "confirm" && (
+            <div className="p-4">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                默认行为
+              </div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+                倒计时结束后自动执行的操作。可随时用键盘覆盖：Enter 执行默认，Esc 执行相反
+              </div>
+              <div className="flex gap-2">
+                {([
+                  { value: "dismiss" as DefaultAction, label: "默认丢弃", icon: "🗑️", desc: "不操作就自动丢弃" },
+                  { value: "save" as DefaultAction, label: "默认保存", icon: "💾", desc: "不操作就自动保存" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setDefaultAction(opt.value)}
+                    className={`
+                      flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg border
+                      transition-all duration-150
+                      ${
+                        defaultAction === opt.value
+                          ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/15 dark:to-purple-500/15 border-indigo-300/60 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400 shadow-sm"
+                          : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
+                      }
+                    `}
+                  >
+                    <span>{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Sensitive Data Filter Toggle */}
           <div className="p-4 flex items-center justify-between">
             <div>
@@ -476,6 +582,111 @@ export function SettingsView() {
             >
               {screenshotDir}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* AI Assistant Connection (MCP) */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3 flex items-center gap-2">
+          <span className="text-xl">🔗</span>
+          AI 助理连接
+        </h2>
+        <div className="glass rounded-2xl divide-y divide-gray-100/50 dark:divide-white/[0.06]">
+          {/* MCP Connections */}
+          {([
+            { id: "claude" as McpTargetId, name: "Claude Desktop", hint: "在 Claude 中问" },
+          ]).map((t) => {
+            const s = mcpStates[t.id];
+            return (
+              <div key={t.id} className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {t.name}
+                    </div>
+                    <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                      {s.connected
+                        ? `已连接 — ${t.name} 可以读取你保存的内容`
+                        : `未连接 — 一键让 ${t.name} 读取你的数据`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${s.connected ? "bg-green-500" : "bg-gray-300 dark:bg-slate-600"}`} />
+                    <span className="text-xs text-gray-500 dark:text-slate-400">
+                      {s.connected ? "已连接" : "未连接"}
+                    </span>
+                  </div>
+                </div>
+
+                {s.connected ? (
+                  <button
+                    onClick={() => handleDisconnectMcp(t.id)}
+                    disabled={s.loading}
+                    className="w-full py-2 text-sm font-medium rounded-lg border
+                               text-red-500 dark:text-red-400
+                               border-red-200/50 dark:border-red-500/20
+                               bg-red-50/50 dark:bg-red-500/[0.06]
+                               hover:bg-red-100/50 dark:hover:bg-red-500/[0.12]
+                               disabled:opacity-50 transition-colors"
+                  >
+                    {s.loading ? "处理中..." : "断开连接"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleConnectMcp(t.id)}
+                    disabled={s.loading}
+                    className="w-full py-2 text-sm font-medium rounded-lg border
+                               text-indigo-600 dark:text-indigo-400
+                               border-indigo-200/50 dark:border-indigo-500/20
+                               bg-indigo-50/50 dark:bg-indigo-500/[0.06]
+                               hover:bg-indigo-100/50 dark:hover:bg-indigo-500/[0.12]
+                               disabled:opacity-50 transition-colors"
+                  >
+                    {s.loading ? "连接中..." : `连接 ${t.name}`}
+                  </button>
+                )}
+
+                {s.message && (
+                  <p className="mt-2 text-xs text-green-600 dark:text-green-400">{s.message}</p>
+                )}
+                {s.error && (
+                  <p className="mt-2 text-xs text-red-500 dark:text-red-400">{s.error}</p>
+                )}
+
+                {s.connected && (
+                  <div className="mt-3 p-2.5 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-lg">
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">{t.hint}：</p>
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 italic">"查看我最近保存的内容"</p>
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 italic">"帮我整理这周收藏的文章"</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Copy Summary for ChatGPT/Gemini */}
+          <div className="p-4">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              ChatGPT / Gemini
+            </div>
+            <div className="text-xs text-gray-400 dark:text-slate-500 mb-2.5">
+              复制最近 7 天内容摘要，粘贴到任意 AI 对话中
+            </div>
+            <button
+              onClick={handleCopySummary}
+              className="w-full py-2 text-sm font-medium rounded-lg border
+                         text-gray-600 dark:text-slate-300
+                         border-white/60 dark:border-white/[0.08]
+                         bg-white/50 dark:bg-white/[0.04]
+                         hover:bg-white/80 dark:hover:bg-white/[0.08]
+                         transition-colors"
+            >
+              {summaryCopied ? "✓ 已复制到剪贴板" : "复制最近内容摘要"}
+            </button>
+            {mcpGlobalError && (
+              <p className="mt-2 text-xs text-red-500 dark:text-red-400">{mcpGlobalError}</p>
+            )}
           </div>
         </div>
       </section>

@@ -173,9 +173,7 @@ impl UrlReader {
             (None, text)
         };
 
-        if body.len() < MIN_CONTENT_LENGTH {
-            return Err("Tweet content too short".to_string());
-        }
+        // No minimum length check — user chose to save it, respect that
 
         let content = truncate_content(body);
         let markdown = if let Some(ref t) = title {

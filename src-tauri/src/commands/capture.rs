@@ -207,6 +207,8 @@ pub fn save_content_auto(db: &Arc<Database>, event: CaptureEvent) -> Result<Capt
         is_deleted: false,
         created_at: now.clone(),
         updated_at: now,
+        digested_at: None,
+        digest_action: None,
     };
 
     repo.save_content(&content).map_err(|e| e.to_string())?;

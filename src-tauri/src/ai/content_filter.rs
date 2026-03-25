@@ -488,6 +488,8 @@ mod tests {
                 is_deleted: false,
                 created_at: "2025-01-01T00:00:00Z".to_string(),
                 updated_at: "2025-01-01T00:00:00Z".to_string(),
+                digested_at: None,
+                digest_action: None,
             }
         };
 

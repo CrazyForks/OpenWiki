@@ -33,12 +33,15 @@ export default function BubbleView() {
   const [expanded, setExpanded] = useState(false);
   const [memo, setMemo] = useState("");
   const [bubblePosition, setBubblePosition] = useState("bottom-right");
+  const [defaultAction, setDefaultAction] = useState<"save" | "dismiss">("dismiss");
   // ★ Key state: once confirmed, ONLY render success UI. Nothing can override this.
   const [confirmed, setConfirmed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRef = useRef<PendingCapture | null>(null);
   const appWindow = useRef(getCurrentWindow());
   const inputRef = useRef<HTMLInputElement>(null);
+  // Snapshot of countdown when memo is expanded (for pause/resume)
+  const pausedCountdownRef = useRef<number | null>(null);
 
   useEffect(() => { pendingRef.current = pending; }, [pending]);
 
@@ -108,6 +111,8 @@ export default function BubbleView() {
   // Expand circle → card with preview + input
   const expandToCapsule = useCallback(async () => {
     if (expanded || bubbleStyle !== "circle" || confirmed) return;
+    // Snapshot current countdown before pausing
+    pausedCountdownRef.current = countdown;
     clearTimer();
     setExpanded(true);
     // Resize native window and move it up so it expands upward (not behind Dock)
@@ -124,9 +129,31 @@ export default function BubbleView() {
       console.error("Failed to resize bubble window:", e);
     }
     setTimeout(() => inputRef.current?.focus(), 350);
-  }, [expanded, bubbleStyle, clearTimer, confirmed]);
+  }, [expanded, bubbleStyle, clearTimer, confirmed, countdown]);
 
-  // On mount: fetch pending data + bubble style
+  // Collapse memo panel back to circle, resume countdown from snapshot
+  const collapseCapsule = useCallback(async () => {
+    if (!expanded || confirmed) return;
+    setExpanded(false);
+    setMemo("");
+    // Restore countdown from snapshot
+    if (pausedCountdownRef.current !== null) {
+      setCountdown(pausedCountdownRef.current);
+      pausedCountdownRef.current = null;
+    }
+    // Resize window back to circle
+    try {
+      const win = appWindow.current;
+      const { LogicalSize, LogicalPosition } = await import("@tauri-apps/api/dpi");
+      const scale = await win.scaleFactor();
+      const pos = await win.outerPosition();
+      const heightDiff = EXPANDED_H - CIRCLE_SIZE;
+      await win.setPosition(new LogicalPosition(pos.x / scale, pos.y / scale + heightDiff));
+      await win.setSize(new LogicalSize(CAPSULE_W, CIRCLE_SIZE));
+    } catch {}
+  }, [expanded, confirmed]);
+
+  // On mount: fetch pending data + bubble style + default_action
   useEffect(() => {
     const init = async () => {
       try {
@@ -137,6 +164,7 @@ export default function BubbleView() {
           const secs = parseInt(settings.countdown_seconds, 10);
           if (secs >= 1 && secs <= 30) { setCountdownMax(secs); setCountdown(secs); }
         }
+        if (settings?.default_action === "save") setDefaultAction("save");
       } catch {}
       try {
         const data = await invoke<PendingCapture | null>("get_pending_capture");
@@ -146,6 +174,41 @@ export default function BubbleView() {
     const timer = setTimeout(init, 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // ★ Global keyboard listener
+  useEffect(() => {
+    if (!pending || confirmed) return;
+
+    const handler = (e: KeyboardEvent) => {
+      // Don't handle if input is focused (input handles its own Enter)
+      const isInputFocused = document.activeElement === inputRef.current;
+
+      if (e.key === "Enter") {
+        if (isInputFocused) return; // Let input's onKeyDown handle it
+        e.preventDefault();
+        // Enter = always save (universal convention)
+        confirm();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        if (expanded) {
+          // Collapse memo, resume countdown
+          collapseCapsule();
+        } else {
+          // Esc = always dismiss/cancel (universal convention)
+          dismiss();
+        }
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        // Tab only works in circle mode to expand memo
+        if (!expanded && bubbleStyle === "circle") {
+          expandToCapsule();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [pending, confirmed, expanded, defaultAction, bubbleStyle, confirm, dismiss, expandToCapsule, collapseCapsule]);
 
   // ★ Listen for new capture events — UNSUBSCRIBE when expanded or confirmed
   useEffect(() => {
@@ -159,24 +222,35 @@ export default function BubbleView() {
       invoke("debug_log", { message: `[LISTENER] capture:pending received! type=${event.payload.content_type}` }).catch(() => {});
       clearTimer(); setPending(event.payload); setCountdown(countdownMax);
       setExpanded(false); setMemo(""); setConfirmed(false); setSaving(false);
+      pausedCountdownRef.current = null;
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [expanded, confirmed, clearTimer, countdownMax]);
 
   // Countdown (only when NOT expanded and NOT confirmed)
+  // ★ When countdown reaches 0, execute default_action (not always dismiss)
   useEffect(() => {
     if (!pending || expanded || confirmed) return;
     timerRef.current = setInterval(() => {
       setCountdown((prev) => {
-        if (prev <= 1) { setTimeout(() => dismiss(), 0); return 0; }
+        if (prev <= 1) {
+          setTimeout(() => {
+            if (defaultAction === "save") confirm();
+            else dismiss();
+          }, 0);
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
     return () => clearTimer();
-  }, [pending, expanded, confirmed, dismiss, clearTimer]);
+  }, [pending, expanded, confirmed, defaultAction, dismiss, confirm, clearTimer]);
 
   const isRight = bubblePosition.includes("right");
   const isLeft = bubblePosition.includes("left");
+
+  // Default action label for bar mode UI hint
+  const barActionHint = defaultAction === "save" ? `${countdown}s 后自动保存` : `${countdown}s 后自动丢弃`;
 
   // ════════════════════════════════════════════════════════════
   // ★★★ CONFIRMED STATE: Green checkmark success animation ★★★
@@ -345,10 +419,13 @@ export default function BubbleView() {
                 value={memo}
                 onChange={(e) => setMemo(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") confirm();
-                  if (e.key === "Escape") dismiss();
+                  if (e.key === "Enter") {
+                    e.stopPropagation();
+                    confirm();
+                  }
+                  // Esc is handled by global listener (collapseCapsule)
                 }}
-                placeholder="输入备注..."
+                placeholder="输入备注... (Enter 保存, Esc 取消)"
                 className="flex-1 bg-white/[0.06] rounded-lg px-2.5 py-1.5 text-[13px] text-white/90 placeholder-white/25
                            outline-none border border-white/[0.08] focus:border-indigo-400/30 min-w-0"
                 style={{ caretColor: "#818cf8" }}
@@ -365,7 +442,7 @@ export default function BubbleView() {
                 {saving ? "..." : "保存"}
               </button>
               <button
-                onClick={dismiss}
+                onClick={collapseCapsule}
                 className="w-7 h-7 rounded-lg flex items-center justify-center
                            text-white/20 hover:text-red-400 hover:bg-red-500/15
                            transition-all duration-150 cursor-pointer flex-shrink-0"
@@ -431,9 +508,8 @@ export default function BubbleView() {
                 </defs>
               </svg>
               {/* Icon center */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-sm leading-none">{isImage ? "📷" : isUrl ? "🔗" : "📋"}</span>
-                <span className="text-[9px] font-bold text-indigo-400 mt-0.5">{countdown}s</span>
               </div>
             </div>
           </div>
@@ -473,11 +549,14 @@ export default function BubbleView() {
     : "from-indigo-500/20 to-violet-500/20";
   const iconEmoji = isImage ? "📷" : isUrl ? "🔗" : "📋";
 
+  // Bar mode: click executes default action
+  const barClick = defaultAction === "save" ? confirm : dismiss;
+
   return (
     <div className="w-[340px] h-[72px] select-none" style={{ background: "transparent" }}>
       <div
         className="relative w-full h-full rounded-2xl overflow-hidden cursor-pointer group"
-        onClick={confirm}
+        onClick={barClick}
         style={{
           background: "rgba(15, 15, 30, 0.75)",
           backdropFilter: "blur(24px)",
@@ -529,7 +608,7 @@ export default function BubbleView() {
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-medium text-white/30 uppercase tracking-wider">{pending.source_app}</span>
               <span className="w-[3px] h-[3px] rounded-full bg-white/15" />
-              <span className="text-[10px] text-indigo-400/70">{countdown}s</span>
+              <span className="text-[10px] text-indigo-400/70">{barActionHint}</span>
             </div>
             <span className="text-[13px] font-medium text-white/85 leading-snug truncate">
               {saving ? "保存中..." : barPreview}

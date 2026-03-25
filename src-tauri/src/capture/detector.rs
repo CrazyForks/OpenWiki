@@ -377,10 +377,58 @@ fn make_window_transparent(win: &tauri::WebviewWindow) {
             let ns_color_cls = AnyClass::get("NSColor").unwrap();
             let clear_color: *const AnyObject = objc2::msg_send![ns_color_cls, clearColor];
             let _: () = objc2::msg_send![ns_window, setBackgroundColor: clear_color];
+
+            let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
         }
     });
 
     log::info!("Window transparency dispatched to main thread");
+}
+
+/// Force the bubble window to become the focused (key) window on macOS.
+/// This requires two steps:
+/// 1. Activate the app itself (NSApp.activateIgnoringOtherApps) — without this,
+///    macOS won't give focus to a background app's window.
+/// 2. Make the window the key window (makeKeyAndOrderFront).
+#[cfg(target_os = "macos")]
+fn focus_bubble_window(win: &tauri::WebviewWindow) {
+    use raw_window_handle::HasWindowHandle;
+
+    let handle = match win.window_handle() {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+
+    let appkit = match handle.as_raw() {
+        raw_window_handle::RawWindowHandle::AppKit(h) => h,
+        _ => return,
+    };
+
+    let ns_view_ptr = appkit.ns_view.as_ptr() as usize;
+
+    dispatch::Queue::main().exec_async(move || {
+        unsafe {
+            use objc2::runtime::{AnyClass, AnyObject};
+
+            // Step 1: Activate the app so macOS allows it to take focus
+            let ns_app_cls = AnyClass::get("NSApplication").unwrap();
+            let ns_app: *const AnyObject = objc2::msg_send![ns_app_cls, sharedApplication];
+            if !ns_app.is_null() {
+                let ns_app: &AnyObject = &*ns_app;
+                let _: () = objc2::msg_send![ns_app, activateIgnoringOtherApps: true];
+            }
+
+            // Step 2: Make the bubble window the key (focused) window
+            let ns_view: &AnyObject = &*(ns_view_ptr as *const AnyObject);
+            let ns_window: *const AnyObject = objc2::msg_send![ns_view, window];
+            if !ns_window.is_null() {
+                let ns_window: &AnyObject = &*ns_window;
+                let _: () = objc2::msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null::<AnyObject>()];
+            }
+        }
+    });
+
+    log::info!("Bubble window focus dispatched to main thread");
 }
 
 /// Dynamically create and show the bubble window at the bottom-right of the screen.
@@ -488,6 +536,7 @@ fn show_bubble_window(app: &AppHandle) {
     .skip_taskbar(true)
     .visible(true)
     .focused(true)
+    .accept_first_mouse(true)
     .build()
     {
         Ok(win) => {
@@ -508,6 +557,8 @@ fn show_bubble_window(app: &AppHandle) {
                     );
                 }
             }
+            // Force focus for both circle and bar modes
+            focus_bubble_window(&win);
             log::info!("Bubble window created (style={})", bubble_style);
         }
         Err(e) => {
