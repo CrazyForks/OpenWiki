@@ -90,6 +90,19 @@ impl Database {
             log::info!("Migration 004 applied: added digest fields");
         }
 
+        // Migration 005: Add attention_insights table
+        let has_attention_insights: bool = conn
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='attention_insights'")?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_attention_insights {
+            let migration_005 = include_str!("migrations/005_add_attention_insights.sql");
+            conn.execute_batch(migration_005)?;
+            log::info!("Migration 005 applied: added attention_insights table");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }
