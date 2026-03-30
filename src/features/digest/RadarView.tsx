@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { RefreshCw, Target, Zap, Key, Search } from "lucide-react";
+import { RefreshCw, Target, Key, Search } from "lucide-react";
 import { useRadarStore } from "../../stores/radarStore";
 import { InsightCard } from "./InsightCard";
 import { InsightDetail } from "./InsightDetail";
