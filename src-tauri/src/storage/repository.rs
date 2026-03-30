@@ -1,6 +1,6 @@
 use super::database::Database;
 use super::models::{
-    CapturedContent, ContentType, ReportSection, UserFeedback, UserPreference, WeeklyReport,
+    AttentionInsight, CapturedContent, ContentType, ReportSection, UserFeedback, UserPreference, WeeklyReport,
 };
 use rusqlite::params;
 use std::sync::Arc;
@@ -955,6 +955,143 @@ impl Repository {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    // ========== Attention Insights ==========
+
+    /// Get recent content for attention analysis (only needed fields).
+    pub fn get_recent_content_for_analysis(
+        &self,
+        days: i64,
+        limit: usize,
+    ) -> Result<Vec<(String, Option<String>, Option<String>, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(days)).to_rfc3339();
+        let mut stmt = conn.prepare(
+            "SELECT id, raw_text, source_url, captured_at
+             FROM captured_content
+             WHERE is_deleted = 0 AND captured_at >= ?1
+             ORDER BY captured_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![cutoff, limit as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Save a new attention insight, marking all previous as not current.
+    pub fn save_attention_insight(
+        &self,
+        analysis_json: Option<&str>,
+        status: &str,
+        error_message: Option<&str>,
+        window_start: &str,
+        window_end: &str,
+        content_count: i32,
+        model_used: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute("UPDATE attention_insights SET is_current = 0", [])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO attention_insights (analysis_json, status, error_message, analyzed_at, window_start, window_end, content_count, model_used, is_current)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
+            params![analysis_json, status, error_message, now, window_start, window_end, content_count, model_used],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update the status of an insight.
+    pub fn update_insight_status(
+        &self,
+        id: i64,
+        status: &str,
+        analysis_json: Option<&str>,
+        error_message: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE attention_insights SET status = ?1, analysis_json = ?2, error_message = ?3 WHERE id = ?4",
+            params![status, analysis_json, error_message, id],
+        )?;
+        Ok(())
+    }
+
+    /// Get the most recent current insight.
+    pub fn get_current_insight(
+        &self,
+    ) -> Result<Option<AttentionInsight>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, analysis_json, status, error_message, analyzed_at, window_start, window_end, content_count, model_used, is_current
+             FROM attention_insights
+             WHERE is_current = 1
+             ORDER BY analyzed_at DESC
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map([], |row| {
+            Ok(AttentionInsight {
+                id: row.get(0)?,
+                analysis_json: row.get(1)?,
+                status: row.get(2)?,
+                error_message: row.get(3)?,
+                analyzed_at: row.get(4)?,
+                window_start: row.get(5)?,
+                window_end: row.get(6)?,
+                content_count: row.get(7)?,
+                model_used: row.get(8)?,
+                is_current: row.get::<_, i32>(9)? == 1,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(insight)) => Ok(Some(insight)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// Check if any content was saved or updated after the given timestamp.
+    pub fn has_new_content_since(
+        &self,
+        since: &str,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM captured_content WHERE is_deleted = 0 AND (captured_at > ?1 OR updated_at > ?1)",
+            params![since],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     }
 }
 
