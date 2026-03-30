@@ -75,19 +75,20 @@ export function RadarView() {
   }
 
   return (
-    <div className="px-5 py-4 overflow-y-auto" style={{ height: "calc(100vh - 44px)" }}>
+    <div className="px-5 py-4 overflow-y-auto" style={{ height: "calc(100vh - 44px)", color: "var(--color-text-primary)" }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h2
-          className="font-bold text-stone-900"
-          style={{ fontSize: 24, fontFamily: "'Cabinet Grotesk', sans-serif", fontWeight: 700 }}
+          className="font-bold"
+          style={{ fontSize: 24, fontFamily: "'Cabinet Grotesk', sans-serif", fontWeight: 700, color: "var(--color-text-primary)" }}
         >
           注意力雷达
         </h2>
         <button
           onClick={() => triggerAnalysis()}
           disabled={isAnalyzing || !hasNewContent}
-          className="p-2 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100
+          className="p-2 rounded-lg text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300
+                     hover:bg-stone-100 dark:hover:bg-white/[0.08]
                      disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           title="刷新分析"
         >
@@ -101,7 +102,7 @@ export function RadarView() {
 
       {/* Subtitle */}
       {!isLoading && hasFindings && (
-        <p className="text-stone-500 mb-6" style={{ fontSize: 13 }}>
+        <p className="mb-6" style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
           最近 14 天 · 基于 {contentCount} 条内容分析
         </p>
       )}
@@ -112,12 +113,12 @@ export function RadarView() {
           {/* Stats skeleton */}
           <div className="grid grid-cols-4 gap-3">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-16 bg-stone-100 rounded-xl animate-pulse" />
+              <div key={i} className="h-16 bg-stone-100 dark:bg-white/[0.06] rounded-xl animate-pulse" />
             ))}
           </div>
           {/* Card skeletons */}
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-40 bg-stone-100 rounded-xl animate-pulse" />
+            <div key={i} className="h-40 bg-stone-100 dark:bg-white/[0.06] rounded-xl animate-pulse" />
           ))}
         </div>
       )}
@@ -125,9 +126,9 @@ export function RadarView() {
       {/* Empty states */}
       {!isLoading && status === "no_api_key" && (
         <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-          <Key size={48} className="text-stone-300 mb-4" strokeWidth={1.5} />
-          <p className="text-base font-medium text-stone-700 mb-1">需要配置 AI 服务</p>
-          <p className="text-stone-500 mb-4" style={{ fontSize: 13 }}>
+          <Key size={48} className="text-stone-300 dark:text-stone-600 mb-4" strokeWidth={1.5} />
+          <p className="text-base font-medium mb-1">需要配置 AI 服务</p>
+          <p className="mb-4" style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
             注意力雷达需要 AI 来分析你的内容
           </p>
           <button
@@ -142,9 +143,9 @@ export function RadarView() {
 
       {!isLoading && status === "not_enough_content" && (
         <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-          <Target size={48} className="text-stone-300 mb-4" strokeWidth={1.5} />
-          <p className="text-base font-medium text-stone-700 mb-1">你离洞察只差几步</p>
-          <p className="text-stone-500" style={{ fontSize: 13 }}>
+          <Target size={48} className="text-stone-300 dark:text-stone-600 mb-4" strokeWidth={1.5} />
+          <p className="text-base font-medium mb-1">你离洞察只差几步</p>
+          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
             继续保存你感兴趣的内容，积累到 5 条就能开始分析
           </p>
         </div>
@@ -154,9 +155,9 @@ export function RadarView() {
        status !== "no_api_key" && status !== "not_enough_content" &&
        status !== "error" && (
         <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-          <Search size={48} className="text-stone-300 mb-4" strokeWidth={1.5} />
-          <p className="text-base font-medium text-stone-700 mb-1">暂时没有发现模式</p>
-          <p className="text-stone-500" style={{ fontSize: 13 }}>
+          <Search size={48} className="text-stone-300 dark:text-stone-600 mb-4" strokeWidth={1.5} />
+          <p className="text-base font-medium mb-1">暂时没有发现模式</p>
+          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
             继续保存内容，小云会持续寻找你的注意力模式
           </p>
         </div>
@@ -164,7 +165,7 @@ export function RadarView() {
 
       {/* Error state */}
       {!isLoading && status === "error" && (
-        <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: "#FEF2F2" }}>
+        <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
           <p className="text-red-700 mb-2" style={{ fontSize: 13 }}>
             {errorMessage || "分析时出现错误"}
           </p>
@@ -254,11 +255,11 @@ export function RadarView() {
         <div className="space-y-6 mt-6">
           <div className="grid grid-cols-4 gap-3">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-16 bg-stone-100 rounded-xl animate-pulse" />
+              <div key={i} className="h-16 bg-stone-100 dark:bg-white/[0.06] rounded-xl animate-pulse" />
             ))}
           </div>
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-40 bg-stone-100 rounded-xl animate-pulse" />
+            <div key={i} className="h-40 bg-stone-100 dark:bg-white/[0.06] rounded-xl animate-pulse" />
           ))}
           <div className="text-center py-4">
             <RefreshCw size={16} className="animate-spin text-stone-400 mx-auto mb-2" />
@@ -272,14 +273,14 @@ export function RadarView() {
 
 function StatItem({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="bg-white border border-stone-200 rounded-xl p-3 text-center">
+    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
       <p
         className="font-bold font-mono"
         style={{ fontSize: 20, color }}
       >
         {value}
       </p>
-      <p className="text-stone-500" style={{ fontSize: 11 }}>
+      <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
         {label}
       </p>
     </div>
@@ -299,7 +300,7 @@ function Section({
     <div className="mb-8">
       <div className="flex items-center gap-2 mb-3">
         {icon}
-        <h3 className="font-semibold text-stone-700" style={{ fontSize: 15 }}>
+        <h3 className="font-semibold" style={{ fontSize: 15, color: "var(--color-text-primary)" }}>
           {title}
         </h3>
       </div>

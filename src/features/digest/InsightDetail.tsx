@@ -36,8 +36,8 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
       {/* Back button */}
       <button
         onClick={onBack}
-        className="flex items-center gap-1 text-stone-500 hover:text-stone-700 transition-colors"
-        style={{ fontSize: 13 }}
+        className="flex items-center gap-1 transition-colors"
+        style={{ fontSize: 13, color: "var(--color-text-muted)" }}
       >
         <ArrowLeft size={14} strokeWidth={2} />
         返回雷达
@@ -54,23 +54,23 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
 
       {/* Title */}
       <h1
-        className="font-bold text-stone-900"
-        style={{ fontSize: 24, fontFamily: "'Cabinet Grotesk', sans-serif" }}
+        className="font-bold"
+        style={{ fontSize: 24, fontFamily: "'Cabinet Grotesk', sans-serif", color: "var(--color-text-primary)" }}
       >
         {data.title}
       </h1>
 
       {/* Subtitle */}
-      <p className="text-stone-500" style={{ fontSize: 13 }}>
+      <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
         过去 14 天 · {evidenceCount} 条相关内容
       </p>
 
       {/* AI insight block */}
       <div
         className="rounded-xl p-4"
-        style={{ backgroundColor: "#FFF7ED", border: "1px solid #FFEDD5" }}
+        style={{ backgroundColor: "var(--color-accent-soft)", border: "1px solid var(--color-border)" }}
       >
-        <p className="text-stone-700" style={{ fontSize: 14 }}>
+        <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>
           {data.why_now}
         </p>
       </div>
@@ -80,7 +80,7 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
         /* Dual columns for connection */
         <div className="grid grid-cols-2 gap-4">
           <div className="border-l-2 pl-4" style={{ borderColor: "#2563EB" }}>
-            <h3 className="font-semibold text-stone-700 mb-3" style={{ fontSize: 14 }}>
+            <h3 className="font-semibold mb-3" style={{ fontSize: 14, color: "var(--color-text-primary)" }}>
               {connData.group_a.topic}
             </h3>
             <div className="space-y-3">
@@ -89,7 +89,7 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
                   <span className="font-mono text-stone-400 block" style={{ fontSize: 11 }}>
                     {item.date}
                   </span>
-                  <span className="text-stone-700" style={{ fontSize: 13 }}>
+                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
                     {item.title}
                   </span>
                 </div>
@@ -97,7 +97,7 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
             </div>
           </div>
           <div className="border-l-2 pl-4" style={{ borderColor: "#2563EB" }}>
-            <h3 className="font-semibold text-stone-700 mb-3" style={{ fontSize: 14 }}>
+            <h3 className="font-semibold mb-3" style={{ fontSize: 14 }}>
               {connData.group_b.topic}
             </h3>
             <div className="space-y-3">
@@ -106,7 +106,7 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
                   <span className="font-mono text-stone-400 block" style={{ fontSize: 11 }}>
                     {item.date}
                   </span>
-                  <span className="text-stone-700" style={{ fontSize: 13 }}>
+                  <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
                     {item.title}
                   </span>
                 </div>
@@ -116,17 +116,17 @@ export function InsightDetail({ type, data, onBack }: InsightDetailProps) {
         </div>
       ) : evidenceData ? (
         /* Timeline for thread/obsession */
-        <div className="border-l-2 border-stone-200 pl-4 space-y-4">
+        <div className="border-l-2 pl-4 space-y-4" style={{ borderColor: "var(--color-border)" }}>
           {evidenceData.evidence.map((item, i) => (
             <div key={i} className="relative">
               <div
-                className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full border-2 bg-white"
-                style={{ borderColor: config.color }}
+                className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full border-2"
+                style={{ backgroundColor: "var(--color-surface)", borderColor: config.color }}
               />
               <span className="font-mono text-stone-400 block" style={{ fontSize: 11 }}>
                 {item.date}
               </span>
-              <span className="text-stone-700" style={{ fontSize: 13 }}>
+              <span className="" style={{ fontSize: 13 }}>
                 {item.title}
               </span>
             </div>

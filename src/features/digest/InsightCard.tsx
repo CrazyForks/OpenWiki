@@ -71,7 +71,7 @@ export function InsightCard({
             >
               {item.date}
             </span>
-            <span className="text-stone-700 truncate" style={{ fontSize: 13 }}>
+            <span className="truncate" style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
               {item.title}
             </span>
           </div>
@@ -91,9 +91,9 @@ export function InsightCard({
       role="button"
       onClick={onExpand}
       onKeyDown={handleKeyDown}
-      className="bg-white border border-stone-200 rounded-xl p-4 cursor-pointer
-                 hover:border-stone-300 transition-colors outline-none
+      className="rounded-xl p-4 cursor-pointer transition-colors outline-none
                  focus-visible:ring-2 focus-visible:ring-orange-300"
+      style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
@@ -112,14 +112,14 @@ export function InsightCard({
       </div>
 
       {/* Title */}
-      <h3 className="font-semibold text-stone-800 mb-2" style={{ fontSize: 15 }}>
+      <h3 className="font-semibold mb-2" style={{ fontSize: 15, color: "var(--color-text-primary)" }}>
         {title}
       </h3>
 
       {/* AI explanation */}
       <p
-        className="text-stone-600 border-l-2 border-stone-200 pl-3 mb-3"
-        style={{ fontSize: 13 }}
+        className="pl-3 mb-3"
+        style={{ fontSize: 13, color: "var(--color-text-secondary)", borderLeft: "2px solid var(--color-border)" }}
       >
         {whyNow}
       </p>
@@ -127,14 +127,14 @@ export function InsightCard({
       {/* Evidence */}
       {type === "connection" && groupA && groupB ? (
         <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="bg-stone-50 rounded-lg p-3">
-            <p className="text-stone-500 font-medium mb-1.5" style={{ fontSize: 12 }}>
+          <div className="rounded-lg p-3" style={{ backgroundColor: "var(--color-surface-raised)" }}>
+            <p className="font-medium mb-1.5" style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
               {groupA.topic}
             </p>
             {renderEvidence(groupA.evidence, maxEvidence)}
           </div>
-          <div className="bg-stone-50 rounded-lg p-3">
-            <p className="text-stone-500 font-medium mb-1.5" style={{ fontSize: 12 }}>
+          <div className="rounded-lg p-3" style={{ backgroundColor: "var(--color-surface-raised)" }}>
+            <p className="font-medium mb-1.5" style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
               {groupB.topic}
             </p>
             {renderEvidence(groupB.evidence, maxEvidence)}
