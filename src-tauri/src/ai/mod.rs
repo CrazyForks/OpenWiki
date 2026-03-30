@@ -1,3 +1,4 @@
+pub mod attention_analyzer;
 pub mod client;
 pub mod content_filter;
 pub mod preference_engine;
