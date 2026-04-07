@@ -9,6 +9,7 @@ pub async fn call_codex_api(
     model: &str,
     instructions: &str,
     user_message: &str,
+    temperature: f32,
 ) -> Result<String, String> {
     let http_client = Client::builder()
         .timeout(Duration::from_secs(180))
@@ -36,7 +37,8 @@ pub async fn call_codex_api(
             }
         ],
         "stream": true,
-        "store": false
+        "store": false,
+        "temperature": temperature
     });
 
     let resp = http_client

@@ -702,7 +702,7 @@ pub async fn call_analysis_api(
                 model: model.to_string(),
                 messages,
                 max_tokens,
-                temperature: 0.3,
+                temperature: 0.5,
                 response_format,
                 enable_thinking,
                 stream: None,
@@ -865,9 +865,9 @@ pub async fn try_codex_call(
     db: std::sync::Arc<crate::storage::database::Database>,
     system_prompt: &str,
     user_message: &str,
+    temperature: f32,
 ) -> Option<Result<String, String>> {
     let (access_token, account_id) = crate::ai::oauth::get_valid_token(db.clone()).await?;
-    // Read user's selected model, default to gpt-5.1-codex
     let repo = crate::storage::repository::Repository::new(db);
     let model = repo
         .get_setting("ai_model")
@@ -881,6 +881,7 @@ pub async fn try_codex_call(
             &model,
             system_prompt,
             user_message,
+            temperature,
         )
         .await,
     )
@@ -891,13 +892,14 @@ pub async fn try_gemini_call(
     db: std::sync::Arc<crate::storage::database::Database>,
     system_prompt: &str,
     user_message: &str,
+    temperature: f32,
 ) -> Option<Result<String, String>> {
     let (access_token, project_id) = crate::ai::gemini_oauth::get_valid_token(db.clone()).await?;
     let repo = crate::storage::repository::Repository::new(db);
     let model = repo.get_setting("ai_model").ok().flatten()
         .unwrap_or_else(|| "gemini-3-flash".to_string());
     Some(crate::ai::gemini_api::call_gemini_api(
-        &access_token, &project_id, &model, system_prompt, user_message,
+        &access_token, &project_id, &model, system_prompt, user_message, temperature,
     ).await)
 }
 

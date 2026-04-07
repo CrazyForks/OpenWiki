@@ -10,6 +10,7 @@ pub async fn call_gemini_api(
     model: &str,
     system_prompt: &str,
     user_message: &str,
+    temperature: f32,
 ) -> Result<String, String> {
     let http_client = Client::builder()
         .timeout(Duration::from_secs(180))
@@ -29,7 +30,7 @@ pub async fn call_gemini_api(
         "model": model,
         "request": {
             "contents": [{"role": "user", "parts": [{"text": user_message}]}],
-            "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.3},
+            "generationConfig": {"maxOutputTokens": 16000, "temperature": temperature},
             "systemInstruction": {"role": "user", "parts": [{"text": sys}]}
         },
         "requestType": "agent",

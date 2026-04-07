@@ -780,6 +780,7 @@ pub fn spawn_summary_task(
                 db.clone(),
                 "You are an AI assistant that analyzes content and returns JSON.",
                 &prompt,
+                0.5, // 摘要：中等 temperature
             )
             .await
             {
@@ -816,7 +817,7 @@ pub fn spawn_summary_task(
         // Try Gemini OAuth if provider is google
         if provider_str == "google" {
             if let Some(result) = crate::ai::attention_analyzer::try_gemini_call(
-                db.clone(), "", &prompt
+                db.clone(), "", &prompt, 0.3, // 摘要：低 temperature
             ).await {
                 match result {
                     Ok(raw) => {
