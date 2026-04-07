@@ -37,11 +37,16 @@ dirs = "6"
 arboard = "3"
 regex = "1"
 once_cell = "1"
+base64 = "0.22"
+open = "5"
 dispatch = "0.2"
 window-vibrancy = "0.5"
 
 [dev-dependencies]
 tempfile = "3"
+base64 = "0.22"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"
