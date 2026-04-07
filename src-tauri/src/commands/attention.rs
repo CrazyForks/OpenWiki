@@ -228,7 +228,8 @@ pub async fn trigger_attention_analysis(
                 db.clone(),
                 &system_prompt,
                 &user_message,
-                0.7, // 洞察报告：高 temperature，有观点有洞察
+                0.7,
+                true, // 深度洞察报告
             )
             .await
             {
@@ -286,7 +287,8 @@ pub async fn trigger_attention_analysis(
                 db.clone(),
                 &system_prompt,
                 &user_message,
-                0.7, // 洞察报告：高 temperature，有观点有洞察
+                0.7,
+                true, // 深度洞察报告
             )
             .await
             {

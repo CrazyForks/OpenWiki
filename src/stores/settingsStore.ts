@@ -18,6 +18,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
   ],
   openai: [
+    { id: "auto", label: "Auto (智能选择)" },
     { id: "gpt-5.4", label: "GPT-5.4" },
     { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
     { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
@@ -77,6 +78,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "qwen-long", label: "Qwen Long" },
   ],
   google: [
+    { id: "auto", label: "Auto (智能选择)" },
     { id: "gemini-3-flash", label: "Gemini 3 Flash" },
     { id: "gemini-3-pro-low", label: "Gemini 3 Pro" },
     { id: "gemini-3-pro-high", label: "Gemini 3 Pro (深度推理)" },

@@ -861,46 +861,78 @@ pub async fn call_dashscope_streaming(
 /// Try calling via Codex OAuth if available.
 /// Returns `Some(Ok(text))` on success, `Some(Err(msg))` on Codex error,
 /// or `None` if the user is not logged in via OAuth (fall back to API key).
+/// `is_deep` = true for radar/insight reports, false for summary/tags.
+/// When model is "auto", picks the right model automatically:
+///   GPT summary: gpt-5.4-mini | GPT radar: gpt-5.4, fallback gpt-5.3-codex
 pub async fn try_codex_call(
     db: std::sync::Arc<crate::storage::database::Database>,
     system_prompt: &str,
     user_message: &str,
     temperature: f32,
+    is_deep: bool,
 ) -> Option<Result<String, String>> {
     let (access_token, account_id) = crate::ai::oauth::get_valid_token(db.clone()).await?;
     let repo = crate::storage::repository::Repository::new(db);
-    let model = repo
+    let saved_model = repo
         .get_setting("ai_model")
         .ok()
         .flatten()
-        .unwrap_or_else(|| "gpt-5.1-codex".to_string());
-    Some(
-        crate::ai::codex_api::call_codex_api(
-            &access_token,
-            &account_id,
-            &model,
-            system_prompt,
-            user_message,
-            temperature,
-        )
-        .await,
-    )
+        .unwrap_or_else(|| "auto".to_string());
+
+    let model = if saved_model == "auto" {
+        if is_deep { "gpt-5.4" } else { "gpt-5.4-mini" }
+    } else {
+        &saved_model
+    };
+
+    let result = crate::ai::codex_api::call_codex_api(
+        &access_token, &account_id, model, system_prompt, user_message, temperature,
+    ).await;
+
+    // Auto fallback for deep tasks: gpt-5.4 → gpt-5.3-codex
+    if saved_model == "auto" && is_deep && result.is_err() {
+        log::warn!("Auto: {} 失败，回退到 gpt-5.3-codex", model);
+        return Some(crate::ai::codex_api::call_codex_api(
+            &access_token, &account_id, "gpt-5.3-codex", system_prompt, user_message, temperature,
+        ).await);
+    }
+
+    Some(result)
 }
 
-/// Try calling via Gemini OAuth if available.
+/// When model is "auto", picks the right model automatically:
+///   Gemini summary: gemini-3-flash | Gemini radar: claude-opus-4-6-thinking, fallback gemini-3.1-pro-high
 pub async fn try_gemini_call(
     db: std::sync::Arc<crate::storage::database::Database>,
     system_prompt: &str,
     user_message: &str,
     temperature: f32,
+    is_deep: bool,
 ) -> Option<Result<String, String>> {
     let (access_token, project_id) = crate::ai::gemini_oauth::get_valid_token(db.clone()).await?;
     let repo = crate::storage::repository::Repository::new(db);
-    let model = repo.get_setting("ai_model").ok().flatten()
-        .unwrap_or_else(|| "gemini-3-flash".to_string());
-    Some(crate::ai::gemini_api::call_gemini_api(
-        &access_token, &project_id, &model, system_prompt, user_message, temperature,
-    ).await)
+    let saved_model = repo.get_setting("ai_model").ok().flatten()
+        .unwrap_or_else(|| "auto".to_string());
+
+    let model = if saved_model == "auto" {
+        if is_deep { "claude-opus-4-6-thinking" } else { "gemini-3-flash" }
+    } else {
+        &saved_model
+    };
+
+    let result = crate::ai::gemini_api::call_gemini_api(
+        &access_token, &project_id, model, system_prompt, user_message, temperature,
+    ).await;
+
+    // Auto fallback for deep tasks: claude-opus-4-6-thinking → gemini-3.1-pro-high
+    if saved_model == "auto" && is_deep && result.is_err() {
+        log::warn!("Auto: {} 失败，回退到 gemini-3.1-pro-high", model);
+        return Some(crate::ai::gemini_api::call_gemini_api(
+            &access_token, &project_id, "gemini-3.1-pro-high", system_prompt, user_message, temperature,
+        ).await);
+    }
+
+    Some(result)
 }
 
 fn process_dashscope_sse_event(
