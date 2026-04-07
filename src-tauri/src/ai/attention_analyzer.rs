@@ -192,7 +192,7 @@ pub fn build_prompt(
     items: &[(String, Option<String>, Option<String>, String)],
 ) -> (String, String) {
     let count = items.len();
-    let max_chars: usize = 500;
+    let max_chars: usize = 3000;
 
     let system_prompt =
         r#"你是用户的私人知识分析师。你的核心任务是：找到用户自己没注意到的联系和规律。
@@ -391,7 +391,7 @@ pub fn build_prompt_v2(
 - 3条，不多不少"#
         .to_string();
 
-    let max_chars: usize = 500;
+    let max_chars: usize = 3000;
     let mut item_jsons = Vec::with_capacity(items.len());
     for item in items {
         let text = item.raw_text.as_deref().unwrap_or("");
@@ -796,7 +796,11 @@ pub async fn call_dashscope_streaming(
     let mut reasoning_acc = String::new();
     let mut pending_data_lines: Vec<String> = Vec::new();
 
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("SSE 读取失败: {}", e))? {
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("SSE 读取失败: {}", e))?
+    {
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         while let Some(newline_pos) = buffer.find('\n') {
@@ -844,6 +848,32 @@ pub async fn call_dashscope_streaming(
     } else {
         Ok(content_acc)
     }
+}
+
+// ====================================================================
+// Codex OAuth Helper
+// ====================================================================
+
+/// Try calling via Codex OAuth if available.
+/// Returns `Some(Ok(text))` on success, `Some(Err(msg))` on Codex error,
+/// or `None` if the user is not logged in via OAuth (fall back to API key).
+pub async fn try_codex_call(
+    db: std::sync::Arc<crate::storage::database::Database>,
+    system_prompt: &str,
+    user_message: &str,
+) -> Option<Result<String, String>> {
+    let (access_token, account_id) = crate::ai::oauth::get_valid_token(db).await?;
+    let model = "gpt-4o";
+    Some(
+        crate::ai::codex_api::call_codex_api(
+            &access_token,
+            &account_id,
+            model,
+            system_prompt,
+            user_message,
+        )
+        .await,
+    )
 }
 
 fn process_dashscope_sse_event(

@@ -4,6 +4,7 @@ use crate::storage::models::{CaptureEvent, CapturedContent, ContentType};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{Emitter, State};
 
 /// The application data directory name for storing captured images.
@@ -16,6 +17,8 @@ pub struct AppState {
     pub db: Arc<Database>,
     /// Stores the latest pending capture for the bubble window to retrieve.
     pub pending_capture: Arc<Mutex<Option<serde_json::Value>>>,
+    /// Temporarily suppresses macOS Reopen from pulling the main window forward.
+    pub suppress_reopen_until: Arc<Mutex<Option<Instant>>>,
 }
 
 /// Get the captures directory, creating it if necessary.
@@ -213,6 +216,7 @@ pub fn save_content_auto(
         digest_action: None,
         summary: None,
         tags: None,
+        digest: None,
     };
 
     repo.save_content(&content).map_err(|e| e.to_string())?;
@@ -720,8 +724,9 @@ pub fn spawn_summary_task(
     content_id: String,
     text: String,
 ) {
-    // At least 2 Chinese characters (~6 bytes) to be worth summarizing
-    if text.trim().len() < 6 {
+    // At least 50 characters to be worth summarizing — very short text
+    // causes AI to summarize the prompt itself instead of the content
+    if text.trim().len() < 50 {
         return;
     }
     tauri::async_runtime::spawn(async move {
@@ -741,9 +746,7 @@ pub fn spawn_summary_task(
             .flatten()
             .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
             .unwrap_or_default();
-        if api_key.is_empty() {
-            return;
-        }
+
         let model = repo
             .get_setting("ai_model")
             .ok()
@@ -753,31 +756,79 @@ pub fn spawn_summary_task(
         // 发送完整内容给 AI（上限 5000 字，覆盖绝大多数文章）
         let content_for_ai: String = text.chars().take(5000).collect();
         let prompt = format!(
-            "通读以下全文，返回JSON格式，包含两个字段：\n\
-             1. \"tags\": 2-3个价值点标签，每个标签回答\"这篇内容教了我什么/让我记住了什么\"。\n\
-                要求：具体、有信息量、能帮人回忆起这篇内容。\n\
-                好的标签：\"逆向思维选股\"、\"冷启动获客策略\"、\"注意力即货币\"\n\
-                差的标签：\"投资\"、\"方法论\"、\"AI\"（太泛，没有信息量）\n\
-                每个标签3-8个字，用中文简体\n\
+            "通读以下全文，返回JSON格式，包含三个字段：\n\
+             1. \"tags\": 2-3个具体标签，必须包含文中的具体名词（人名、公司名、产品名、方法名、术语等）。\n\
+                标签格式：\"具体名词+核心观点\"，让人一看就知道这篇讲了什么。\n\
+                好的标签：\"Musk第一性原理造火箭\"、\"Stripe的开发者体验飞轮\"、\"RAG检索增强生成\"、\"桥水全天候策略对冲\"\n\
+                差的标签：\"创业思维\"、\"产品设计\"、\"AI应用\"、\"投资方法\"（没有具体名词，太泛）\n\
+                每个标签4-12个字，用中文简体（专有名词保留原文）\n\
              2. \"summary\": 用大白话说这篇内容讲了什么（中文简体，不超过80字）。\n\
                 像朋友转发文章时附的一句话，让人一看就知道要不要点开。\n\
                 不要用书面语、不要用\"探讨\"\"阐述\"\"倡导\"这类词，就正常说话。\n\
-             无论原文是什么语言，都必须用中文简体。只返回JSON。\n\
-             示例：{{\"tags\":[\"逆向思维选股\",\"情绪周期套利\",\"长期持有复利\"],\"summary\":\"教你怎么在股市暴跌时抄底，关键是平时得留够现金，不然想抄也没钱\"}}\n\n{}",
+             3. \"digest\": 这篇内容的核心要点总结（中文简体，150-200字）。\n\
+                像一个聪明的朋友帮你读完后告诉你重点。\n\
+                要有结构感：先说核心观点，再说关键论据或例子，最后说结论。\n\
+                不要用\"本文\"\"作者\"这种书面词，直接说内容本身。\n\
+             无论原文是什么语言，都必须用中文简体（专有名词保留原文）。只返回JSON。\n\
+             示例：{{\"tags\":[\"Dalio全天候策略对冲\",\"Shannon再平衡套利\"],\"summary\":\"教你怎么在股市暴跌时抄底，关键是平时得留够现金\",\"digest\":\"投资的核心矛盾是想要高收益又怕亏钱。Dalio的全天候策略用四个桶（股票、长期债、商品、通胀保护债）来分散风险，不管经济好坏都能活着。关键数据：过去30年回撤最大只有3.9%，而纯股票组合最大回撤超过50%。但这个策略牺牲了上涨空间，年化只有9%左右。适合不想操心、愿意接受中等回报的人。\"}}\n\n{}",
             content_for_ai
         );
 
+        // Try Codex OAuth first if provider is openai
+        if provider_str == "openai" {
+            if let Some(result) = crate::ai::attention_analyzer::try_codex_call(
+                db.clone(),
+                "You are an AI assistant that analyzes content and returns JSON.",
+                &prompt,
+            )
+            .await
+            {
+                match result {
+                    Ok(raw) => {
+                        log::info!("Codex OAuth 摘要生成成功 for {}", content_id);
+                        let (summary, tags, digest) = extract_summary_tags_digest(&raw);
+                        if !summary.is_empty() {
+                            let tags_str = tags.join(",");
+                            let _ = repo.update_summary_and_tags(
+                                &content_id,
+                                &summary,
+                                &tags_str,
+                                &digest,
+                            );
+                            let _ = app.emit("content-summary-ready", &content_id);
+                            log::info!(
+                                "Summary generated for {}: [{}] {}",
+                                content_id,
+                                tags_str,
+                                summary
+                            );
+                        }
+                        return;
+                    }
+                    Err(e) => {
+                        log::warn!("Codex OAuth 失败，回退到 API Key: {}", e);
+                        // Fall through to API key path below
+                    }
+                }
+            }
+        }
+
+        // API key path — skip if no key configured
+        if api_key.is_empty() {
+            return;
+        }
+
         let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str(&provider_str);
         match crate::ai::attention_analyzer::call_analysis_api(
-            &provider, &api_key, &model, "", &prompt, 512,
+            &provider, &api_key, &model, "", &prompt, 1024,
         )
         .await
         {
             Ok(raw) => {
-                let (summary, tags) = extract_summary_and_tags(&raw);
+                let (summary, tags, digest) = extract_summary_tags_digest(&raw);
                 if !summary.is_empty() {
                     let tags_str = tags.join(",");
-                    let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str);
+                    let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
                     let _ = app.emit("content-summary-ready", &content_id);
                     log::info!(
                         "Summary generated for {}: [{}] {}",
@@ -794,17 +845,15 @@ pub fn spawn_summary_task(
     });
 }
 
-/// Extract summary and tags from AI response.
-/// Expected format: {"tags":["标签1","标签2"],"summary":"摘要文本"}
-/// Falls back gracefully for unexpected formats.
-fn extract_summary_and_tags(raw: &str) -> (String, Vec<String>) {
+/// Extract summary, tags, and digest from AI response.
+/// Expected format: {"tags":["标签1","标签2"],"summary":"一句话","digest":"段落总结"}
+fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String) {
     let trimmed = raw.trim();
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
         let summary = v
             .get("summary")
             .and_then(|v| v.as_str())
             .or_else(|| v.get("text").and_then(|v| v.as_str()))
-            .or_else(|| v.get("content").and_then(|v| v.as_str()))
             .unwrap_or("")
             .trim()
             .to_string();
@@ -820,27 +869,15 @@ fn extract_summary_and_tags(raw: &str) -> (String, Vec<String>) {
             })
             .unwrap_or_default();
 
-        if !summary.is_empty() {
-            return (summary, tags);
-        }
+        let digest = v
+            .get("digest")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
-        // Fallback: single string value in object
-        if let Some(obj) = v.as_object() {
-            if obj.len() == 1 {
-                if let Some(s) = obj.values().next().and_then(|v| v.as_str()) {
-                    return (s.trim().to_string(), vec![]);
-                }
-            }
-        }
-        // Array fallback
-        if let Some(arr) = v.as_array() {
-            if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                return (s.trim().to_string(), vec![]);
-            }
-        }
-        // Plain string in JSON
-        if let Some(s) = v.as_str() {
-            return (s.trim().to_string(), vec![]);
+        if !summary.is_empty() {
+            return (summary, tags, digest);
         }
     }
     // Not JSON — treat as plain text summary
@@ -848,7 +885,7 @@ fn extract_summary_and_tags(raw: &str) -> (String, Vec<String>) {
         .trim_matches('"')
         .trim_matches('「')
         .trim_matches('」');
-    (stripped.trim().to_string(), vec![])
+    (stripped.trim().to_string(), vec![], String::new())
 }
 
 /// Close (destroy) the bubble window completely.
