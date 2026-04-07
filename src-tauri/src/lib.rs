@@ -8,6 +8,7 @@ mod storage;
 use capture::detector::CaptureDetector;
 use commands::capture::AppState;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,6 +55,7 @@ pub fn run() {
         .manage(AppState {
             db,
             pending_capture: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            suppress_reopen_until: std::sync::Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(move |app| {
             eprintln!("[xiaoyun] App setup started");
@@ -72,8 +74,10 @@ pub fn run() {
                 // This is more reliable than JS onFocusChanged which can stop
                 // firing after repeated show/hide cycles.
                 let win_clone = spotlight_win.clone();
+                let app_handle = app.handle().clone();
                 spotlight_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
+                        suppress_reopen(&app_handle, Duration::from_secs(2));
                         let _ = win_clone.hide();
                     }
                 });
@@ -142,13 +146,22 @@ pub fn run() {
             commands::datahub::open_data_folder,
             commands::attention::get_attention_insights,
             commands::attention::trigger_attention_analysis,
+            commands::oauth::start_openai_oauth,
+            commands::oauth::get_openai_oauth_status,
+            commands::oauth::logout_openai_oauth,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Handle Dock icon click on macOS: always show main window
+            // Handle Dock icon click on macOS: show main window only if it's hidden.
+            // When bubble closes, macOS fires Reopen because no visible windows remain.
+            // We only respond if the main window is actually hidden (user closed it),
+            // not when it's just behind other windows.
             if let tauri::RunEvent::Reopen { .. } = event {
-                show_main_window(app, None);
+                // Skip if within suppress window (bubble just closed)
+                if !is_reopen_suppressed(app) {
+                    show_main_window(app, None);
+                }
             }
         });
 }
@@ -263,6 +276,33 @@ fn detect_frontmost_app() -> String {
     }
 }
 
+fn suppress_reopen(app: &tauri::AppHandle, duration: Duration) {
+    let suppress_arc = app.state::<AppState>().suppress_reopen_until.clone();
+    if let Ok(mut guard) = suppress_arc.lock() {
+        *guard = Some(Instant::now() + duration);
+    };
+}
+
+fn is_reopen_suppressed(app: &tauri::AppHandle) -> bool {
+    let suppress_arc = app.state::<AppState>().suppress_reopen_until.clone();
+    let Ok(mut guard) = suppress_arc.lock() else {
+        return false;
+    };
+
+    match *guard {
+        Some(until) if until > Instant::now() => true,
+        Some(_) => {
+            *guard = None;
+            false
+        }
+        None => false,
+    }
+}
+
+fn should_show_main_on_reopen(main_hidden: bool, reopen_suppressed: bool) -> bool {
+    main_hidden && !reopen_suppressed
+}
+
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -304,5 +344,25 @@ fn show_main_window(app: &tauri::AppHandle, tab: Option<&str>) {
         if let Some(tab) = tab {
             let _ = app.emit("navigate-tab", tab);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_main_on_reopen;
+
+    #[test]
+    fn reopen_shows_main_when_hidden_and_not_suppressed() {
+        assert!(should_show_main_on_reopen(true, false));
+    }
+
+    #[test]
+    fn reopen_does_not_show_main_when_suppressed() {
+        assert!(!should_show_main_on_reopen(true, true));
+    }
+
+    #[test]
+    fn reopen_does_not_show_main_when_already_visible() {
+        assert!(!should_show_main_on_reopen(false, false));
     }
 }
