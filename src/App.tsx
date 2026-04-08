@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ClipboardList, Target, Database, Settings, Search } from "lucide-react";
+import { ClipboardList, Target, Database, Settings, Search, BookOpen } from "lucide-react";
 import { ContentList } from "./features/content-list/ContentList";
 import { SettingsView } from "./features/settings/SettingsView";
 import { DataHubView } from "./features/data-hub/DataHubView";
 import { RadarView } from "./features/digest/RadarView";
+import { WikiView } from "./features/wiki/WikiView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
 import { searchContent } from "./services/dataHubService";
 import type { CapturedContent } from "./types/content";
 // FloatingBubble is now a separate system-level window (see BubbleView.tsx)
 
-type TabId = "content" | "digest" | "datahub" | "settings";
+type TabId = "content" | "wiki" | "digest" | "datahub" | "settings";
 
 interface TabItem {
   id: TabId;
@@ -21,6 +22,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   { id: "content", label: "内容", icon: ClipboardList },
+  { id: "wiki", label: "知识", icon: BookOpen },
   { id: "digest", label: "洞察", icon: Target },
   { id: "settings", label: "设置", icon: Settings },
 ];
@@ -60,6 +62,7 @@ function App() {
   // Track scroll positions per tab for restore on switch-back
   const scrollPositions = useRef<Record<TabId, number>>({
     content: 0,
+    wiki: 0,
     digest: 0,
     datahub: 0,
     settings: 0,
@@ -256,6 +259,7 @@ function App() {
       {/* Tab content — relative z-index above orbs */}
       <main className="relative z-[1]">
         {activeTab === "content" && <ContentList />}
+        {activeTab === "wiki" && <WikiView />}
         {activeTab === "digest" && <RadarView />}
         {activeTab === "datahub" && <DataHubView />}
         {activeTab === "settings" && <SettingsView />}
