@@ -8,3 +8,5 @@ pub mod oauth;
 pub mod preference_engine;
 pub mod prompts;
 pub mod report_generator;
+pub mod wiki_engine;
+pub mod wiki_prompts;
