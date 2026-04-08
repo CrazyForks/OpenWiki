@@ -1359,6 +1359,7 @@ impl Repository {
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
              FROM wiki_pages WHERE status IN ('active', 'needs_recompile')
+             AND page_type != 'qa'
              AND (title LIKE ?1 OR summary LIKE ?1 OR tags LIKE ?1 OR body_markdown LIKE ?1)
              ORDER BY confidence DESC, updated_at DESC LIMIT ?2"
         )?;
@@ -1813,6 +1814,136 @@ impl Repository {
 
     pub fn get_pages_needing_recompile(&self) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
         self.get_wiki_pages_by_status("needs_recompile")
+    }
+
+    // ========== Wiki Chat Sessions ==========
+
+    pub fn create_chat_session(
+        &self,
+        id: &str,
+        title: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "INSERT INTO wiki_chat_sessions (id, title, created_at, updated_at) VALUES (?1, ?2, datetime('now'), datetime('now'))",
+            params![id, title],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chat_sessions(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<super::models::WikiChatSession>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, created_at, updated_at FROM wiki_chat_sessions ORDER BY updated_at DESC LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(super::models::WikiChatSession {
+                id: row.get(0)?, title: row.get(1)?, created_at: row.get(2)?, updated_at: row.get(3)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
+    }
+
+    pub fn update_chat_session_title(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE wiki_chat_sessions SET title=?1, updated_at=datetime('now') WHERE id=?2",
+            params![title, session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_chat_session(
+        &self,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE wiki_chat_sessions SET updated_at=datetime('now') WHERE id=?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_chat_session(
+        &self,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute("DELETE FROM wiki_chat_sessions WHERE id=?1", params![session_id])?;
+        Ok(())
+    }
+
+    // ========== Wiki Chat Messages ==========
+
+    pub fn add_chat_message(
+        &self,
+        msg: &super::models::WikiChatMessage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "INSERT INTO wiki_chat_messages (id, session_id, role, content, pages_used, source_mode, turn_index, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))",
+            params![msg.id, msg.session_id, msg.role, msg.content, msg.pages_used, msg.source_mode, msg.turn_index],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chat_messages(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<super::models::WikiChatMessage>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, role, content, pages_used, source_mode, turn_index, created_at
+             FROM wiki_chat_messages WHERE session_id=?1 ORDER BY turn_index ASC"
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| {
+            Ok(super::models::WikiChatMessage {
+                id: row.get(0)?, session_id: row.get(1)?, role: row.get(2)?,
+                content: row.get(3)?, pages_used: row.get(4)?, source_mode: row.get(5)?,
+                turn_index: row.get(6)?, created_at: row.get(7)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
+    }
+
+    pub fn get_next_turn_index(
+        &self,
+        session_id: &str,
+    ) -> Result<i32, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let max: Option<i32> = conn.query_row(
+            "SELECT MAX(turn_index) FROM wiki_chat_messages WHERE session_id=?1",
+            params![session_id], |r| r.get(0),
+        )?;
+        Ok(max.unwrap_or(-1) + 1)
+    }
+
+    /// Get page summaries for Q&A retrieval, excluding qa-type pages.
+    pub fn get_wiki_page_summaries_for_qa(&self) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, COALESCE(summary, substr(body_markdown, 1, 100))
+             FROM wiki_pages WHERE status = 'active' AND page_type != 'qa' ORDER BY title"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows { results.push(row?); }
+        Ok(results)
     }
 }
 

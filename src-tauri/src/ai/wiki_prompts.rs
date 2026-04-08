@@ -203,43 +203,115 @@ pub fn compile_execute_update_message(
     parts.join("\n")
 }
 
-/// System prompt for Q&A — answering questions based on wiki knowledge.
-pub fn query_system_prompt() -> String {
-    r#"你是「小云」知识库的问答助手。用户根据自己积累的知识库向你提问。
+/// System prompt for Q&A stage 1: retrieve relevant page IDs from index.
+pub fn query_retrieve_system_prompt() -> String {
+    r#"你是「小云」知识库的检索助手。用户提出一个问题，你需要从知识库页面索引中找出相关的页面。
+
+## 任务：
+- 从下方的页面索引中，找出与问题相关的页面
+- 理解语义关联，不要只做关键词匹配（如"巴菲特的投资理念"应该匹配"投资第一性原理"）
+- 最多返回 5 个最相关的页面 ID
+- 如果没有任何相关页面，返回空数组
+
+## 输出格式（纯 JSON，不要 markdown 代码块）：
+{"page_ids": ["id1", "id2"]}"#
+        .to_string()
+}
+
+/// User message for Q&A stage 1: retrieval.
+pub fn query_retrieve_user_message(
+    question: &str,
+    conversation_context: &str,
+    page_index: &[(String, String, String)], // (id, title, summary)
+) -> String {
+    let mut parts = Vec::new();
+    if !conversation_context.is_empty() {
+        parts.push(format!("对话上下文:\n{}", conversation_context));
+    }
+    parts.push(format!("问题: {}", question));
+    parts.push("\n=== 知识库页面索引 ===".to_string());
+    if page_index.is_empty() {
+        parts.push("（知识库为空）".to_string());
+    } else {
+        for (id, title, summary) in page_index {
+            parts.push(format!("[{}] {} — {}", id, title, summary));
+        }
+    }
+    parts.join("\n")
+}
+
+/// System prompt for Q&A stage 2: answer the question.
+pub fn query_answer_system_prompt() -> String {
+    r##"你是「小云」知识库的问答助手。用户根据自己积累的知识库向你提问。
 
 ## 核心原则：
-- 只使用提供的知识库页面内容回答，不要使用你自己的知识
-- 如果知识库中没有相关信息，诚实地说"知识库中暂无相关信息"
-- 综合多个页面的信息给出完整的回答
-- 回答中引用信息来源的页面标题（如"根据「RAG技术」页面..."）
-- 用中文回答，简洁清晰
+- 优先使用知识库页面内容回答
+- 如果知识库内容不足以完整回答，可以用你自己的知识补充，但要明确标注
+- 引用知识库内容时标注来源页面标题（如"根据「RAG技术」页面..."）
+- 补充的内容前标注"[AI 补充]"
+- 用中文回答，简洁清晰，Markdown 格式
 
 ## 输出格式（纯 JSON，不要 markdown 代码块）：
 {
   "answer": "回答内容（Markdown格式）",
-  "page_ids_used": ["引用的页面ID"],
-  "confidence": 0.8,
-  "suggested_followup": "建议的追问（可选，没有则为空字符串）"
-}"#
+  "page_ids_used": ["实际引用的页面ID"],
+  "source_mode": "knowledge_base 或 mixed 或 ai_only",
+  "confidence": 0.8
+}
+
+source_mode 取值：
+- "knowledge_base": 回答完全基于知识库内容
+- "mixed": 主要基于知识库，部分由 AI 补充
+- "ai_only": 知识库无相关内容，完全由 AI 回答"##
     .to_string()
 }
 
-/// User message for Q&A.
-pub fn query_user_message(
+/// User message for Q&A stage 2: answer with full page content.
+pub fn query_answer_user_message(
     question: &str,
+    conversation_context: &str,
     relevant_pages: &[(String, String, String)], // (id, title, body_markdown)
 ) -> String {
-    let mut parts = vec![format!("问题: {}", question), "\n=== 相关知识页面 ===".to_string()];
+    let mut parts = Vec::new();
+    if !conversation_context.is_empty() {
+        parts.push(format!("对话上下文:\n{}", conversation_context));
+    }
+    parts.push(format!("问题: {}", question));
 
     if relevant_pages.is_empty() {
-        parts.push("（没有找到相关知识页面）".to_string());
+        parts.push("\n知识库中没有找到相关页面。请用你自己的知识回答。".to_string());
     } else {
+        parts.push("\n=== 相关知识页面 ===".to_string());
+        // Budget: ~8000 chars for pages
+        let mut budget = 8000i64;
         for (id, title, body) in relevant_pages {
-            let body_truncated: String = body.chars().take(3000).collect();
+            if budget <= 0 { break; }
+            let take = (budget as usize).min(body.chars().count());
+            let body_truncated: String = body.chars().take(take).collect();
             parts.push(format!("\n--- [{}] {} ---\n{}", id, title, body_truncated));
+            budget -= body_truncated.len() as i64;
         }
     }
     parts.join("\n")
+}
+
+/// System prompt for query rewriting (multi-turn).
+pub fn query_rewrite_system_prompt() -> String {
+    r#"你是查询改写助手。用户在对话中提出了一个后续问题，这个问题可能依赖之前的对话上下文。
+请将这个问题改写为一个独立的、完整的搜索查询，使其无需上下文也能被理解。
+只返回改写后的查询文本，不要JSON，不要解释。"#
+        .to_string()
+}
+
+/// User message for query rewriting.
+pub fn query_rewrite_user_message(
+    current_question: &str,
+    recent_turns: &str,
+) -> String {
+    format!(
+        "最近的对话:\n{}\n\n用户的后续问题: {}\n\n请将这个后续问题改写为独立的搜索查询：",
+        recent_turns, current_question
+    )
 }
 
 /// System prompt for wiki lint — health check.

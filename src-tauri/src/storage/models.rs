@@ -236,3 +236,23 @@ pub struct WikiLintResult {
     pub status: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WikiChatSession {
+    pub id: String,
+    pub title: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WikiChatMessage {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub pages_used: Option<String>,
+    pub source_mode: Option<String>,
+    pub turn_index: i32,
+    pub created_at: String,
+}

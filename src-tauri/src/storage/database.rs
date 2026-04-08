@@ -177,6 +177,21 @@ impl Database {
             log::info!("Migration 009 applied: added wiki hash columns");
         }
 
+        // Migration 010: Add multi-turn chat tables
+        let has_chat_sessions: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_chat_sessions'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_chat_sessions {
+            let migration_010 = include_str!("migrations/010_add_chat_tables.sql");
+            conn.execute_batch(migration_010)?;
+            log::info!("Migration 010 applied: added chat session tables");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }

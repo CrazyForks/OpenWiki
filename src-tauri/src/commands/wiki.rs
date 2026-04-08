@@ -171,68 +171,267 @@ pub async fn trigger_wiki_auto_compile(
     }))
 }
 
-// ===== Q&A =====
+// ===== Q&A (3-stage: rewrite → retrieve → answer) =====
+
+use crate::storage::models::{WikiChatSession, WikiChatMessage};
 
 #[tauri::command]
 pub async fn wiki_ask(
     state: State<'_, AppState>,
+    session_id: String,
     question: String,
 ) -> Result<serde_json::Value, String> {
     let db = state.db.clone();
     let repo = Repository::new(db.clone());
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
-    // Search for relevant pages (active + high confidence only for Q&A)
-    let pages = repo
-        .search_wiki_pages(&question, 10)
-        .map_err(|e| e.to_string())?;
-    let qa_pages: Vec<_> = pages
-        .into_iter()
-        .filter(|p| p.status == "active" && p.confidence >= 0.5)
-        .collect();
+    // Ensure session exists
+    let sessions = repo.get_chat_sessions(100).map_err(|e| e.to_string())?;
+    if !sessions.iter().any(|s| s.id == session_id) {
+        let title: String = question.chars().take(30).collect();
+        repo.create_chat_session(&session_id, Some(&title))
+            .map_err(|e| e.to_string())?;
+    }
 
-    let context: Vec<(String, String, String)> = qa_pages
-        .iter()
-        .map(|p| (p.id.clone(), p.title.clone(), p.body_markdown.clone()))
-        .collect();
-
-    let system = crate::ai::wiki_prompts::query_system_prompt();
-    let user = crate::ai::wiki_prompts::query_user_message(&question, &context);
-
-    let raw = wiki_engine::call_ai_pub(db.clone(), &system, &user, 2048).await?;
-    let json = wiki_engine::parse_ai_json_pub(&raw)?;
-
-    // Save conversation
-    let conv_id = uuid::Uuid::new_v4().to_string();
-    let answer = json
-        .get("answer")
-        .and_then(|v| v.as_str())
-        .unwrap_or("无法回答")
-        .to_string();
-    let pages_used = json
-        .get("page_ids_used")
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "[]".to_string());
-
-    let conv = WikiConversation {
-        id: conv_id.clone(),
-        question: question.clone(),
-        answer: answer.clone(),
-        pages_used: pages_used.clone(),
-        saved_as_page: None,
-        model_used: None,
-        created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    // Save user message
+    let user_turn = repo.get_next_turn_index(&session_id).map_err(|e| e.to_string())?;
+    let user_msg = WikiChatMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: session_id.clone(),
+        role: "user".to_string(),
+        content: question.clone(),
+        pages_used: None,
+        source_mode: None,
+        turn_index: user_turn,
+        created_at: now.clone(),
     };
-    let _ = repo.save_wiki_conversation(&conv);
+    repo.add_chat_message(&user_msg).map_err(|e| e.to_string())?;
+
+    // Build conversation context from recent turns
+    let messages = repo.get_chat_messages(&session_id).map_err(|e| e.to_string())?;
+    let recent_context = build_conversation_context(&messages, 3);
+
+    // Stage 0: Query rewrite (if multi-turn)
+    let search_query = if messages.len() > 1 {
+        match rewrite_query(db.clone(), &question, &recent_context).await {
+            Ok(q) => q,
+            Err(_) => question.clone(), // fallback to original
+        }
+    } else {
+        question.clone()
+    };
+
+    // Stage 1: Retrieve relevant page IDs via AI
+    let page_index = repo.get_wiki_page_summaries_for_qa().map_err(|e| e.to_string())?;
+    let relevant_ids = if page_index.is_empty() {
+        vec![]
+    } else {
+        match retrieve_relevant_pages(db.clone(), &search_query, &recent_context, &page_index).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                log::warn!("Q&A stage 1 (retrieve) failed: {}", e);
+                vec![] // fall back to ai_only
+            }
+        }
+    };
+
+    // Stage 2: Load full pages and answer
+    let relevant_pages: Vec<(String, String, String)> = relevant_ids
+        .iter()
+        .filter_map(|id| {
+            repo.get_wiki_page_by_id(id)
+                .ok()
+                .flatten()
+                .filter(|p| p.status == "active" && p.confidence >= 0.5)
+                .map(|p| (p.id, p.title, p.body_markdown))
+        })
+        .collect();
+
+    let answer_system = crate::ai::wiki_prompts::query_answer_system_prompt();
+    let answer_user = crate::ai::wiki_prompts::query_answer_user_message(
+        &question, &recent_context, &relevant_pages,
+    );
+
+    let raw = wiki_engine::call_ai_pub(db.clone(), &answer_system, &answer_user, 2048).await?;
+
+    // Parse response — graceful fallback
+    let (answer, page_ids_used, source_mode, confidence) =
+        match wiki_engine::parse_ai_json_pub(&raw) {
+            Ok(json) => {
+                let a = json.get("answer").and_then(|v| v.as_str()).unwrap_or(&raw).to_string();
+                let pids: Vec<String> = json.get("page_ids_used")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let sm = json.get("source_mode").and_then(|v| v.as_str()).unwrap_or(
+                    if pids.is_empty() { "ai_only" } else { "knowledge_base" }
+                ).to_string();
+                let c = json.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                (a, pids, sm, c)
+            }
+            Err(_) => {
+                // Malformed JSON — use raw text
+                (raw, vec![], "ai_only".to_string(), 0.3)
+            }
+        };
+
+    // Save assistant message
+    let asst_turn = repo.get_next_turn_index(&session_id).map_err(|e| e.to_string())?;
+    let pages_json = serde_json::to_string(&page_ids_used).unwrap_or_else(|_| "[]".to_string());
+    let asst_msg = WikiChatMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: session_id.clone(),
+        role: "assistant".to_string(),
+        content: answer.clone(),
+        pages_used: Some(pages_json.clone()),
+        source_mode: Some(source_mode.clone()),
+        turn_index: asst_turn,
+        created_at: now.clone(),
+    };
+    repo.add_chat_message(&asst_msg).map_err(|e| e.to_string())?;
+    let _ = repo.touch_chat_session(&session_id);
+
+    // Resolve page titles for frontend display
+    let page_titles: Vec<serde_json::Value> = page_ids_used.iter().filter_map(|id| {
+        repo.get_wiki_page_by_id(id).ok().flatten().map(|p| {
+            serde_json::json!({"id": p.id, "title": p.title})
+        })
+    }).collect();
 
     Ok(serde_json::json!({
-        "conversation_id": conv_id,
+        "message_id": asst_msg.id,
         "answer": answer,
-        "pages_used": json.get("page_ids_used"),
-        "confidence": json.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0),
-        "suggested_followup": json.get("suggested_followup").and_then(|v| v.as_str()).unwrap_or(""),
+        "pages_used": page_titles,
+        "source_mode": source_mode,
+        "confidence": confidence,
     }))
 }
 
+/// Build conversation context string from recent messages (last N turns).
+fn build_conversation_context(messages: &[WikiChatMessage], max_turns: usize) -> String {
+    let recent: Vec<&WikiChatMessage> = messages.iter().rev().take(max_turns * 2).collect();
+    let mut parts = Vec::new();
+    let mut budget = 2000i64;
+    for msg in recent.iter().rev() {
+        let role_label = if msg.role == "user" { "用户" } else { "助手" };
+        let content: String = msg.content.chars().take(budget.max(0) as usize).collect();
+        budget -= content.len() as i64;
+        parts.push(format!("{}: {}", role_label, content));
+        if budget <= 0 { break; }
+    }
+    parts.join("\n")
+}
+
+/// Stage 0: Rewrite a follow-up question into a standalone query.
+async fn rewrite_query(
+    db: std::sync::Arc<crate::storage::database::Database>,
+    question: &str,
+    context: &str,
+) -> Result<String, String> {
+    let system = crate::ai::wiki_prompts::query_rewrite_system_prompt();
+    let user = crate::ai::wiki_prompts::query_rewrite_user_message(question, context);
+    let raw = wiki_engine::call_ai_pub(db, &system, &user, 256).await?;
+    Ok(raw.trim().to_string())
+}
+
+/// Stage 1: Ask AI to pick relevant page IDs from the index.
+async fn retrieve_relevant_pages(
+    db: std::sync::Arc<crate::storage::database::Database>,
+    query: &str,
+    context: &str,
+    page_index: &[(String, String, String)],
+) -> Result<Vec<String>, String> {
+    let system = crate::ai::wiki_prompts::query_retrieve_system_prompt();
+    let user = crate::ai::wiki_prompts::query_retrieve_user_message(query, context, page_index);
+    let raw = wiki_engine::call_ai_pub(db, &system, &user, 512).await?;
+    let json = wiki_engine::parse_ai_json_pub(&raw)?;
+    let ids: Vec<String> = json.get("page_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    Ok(ids)
+}
+
+// ===== Chat Session Management =====
+
+#[tauri::command]
+pub fn get_chat_sessions(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<WikiChatSession>, String> {
+    let repo = Repository::new(state.db.clone());
+    repo.get_chat_sessions(limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_chat_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<WikiChatMessage>, String> {
+    let repo = Repository::new(state.db.clone());
+    repo.get_chat_messages(&session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_chat_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let repo = Repository::new(state.db.clone());
+    repo.delete_chat_session(&session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_message_as_page(
+    state: State<'_, AppState>,
+    session_id: String,
+    message_id: String,
+) -> Result<WikiPage, String> {
+    let repo = Repository::new(state.db.clone());
+    let messages = repo.get_chat_messages(&session_id).map_err(|e| e.to_string())?;
+
+    let asst_msg = messages.iter().find(|m| m.id == message_id && m.role == "assistant")
+        .ok_or_else(|| "消息不存在".to_string())?;
+
+    // Anti-contamination: only allow saving if source_mode is not ai_only
+    let source_mode = asst_msg.source_mode.as_deref().unwrap_or("ai_only");
+    if source_mode == "ai_only" {
+        return Err("纯 AI 回答不能保存为知识页面（无知识库来源支撑）".to_string());
+    }
+
+    // Find the preceding user question
+    let user_question = messages.iter().rev()
+        .find(|m| m.turn_index < asst_msg.turn_index && m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_else(|| "Q&A".to_string());
+
+    let page_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let title: String = user_question.chars().take(40).collect();
+
+    let page = WikiPage {
+        id: page_id.clone(),
+        title,
+        slug: format!("qa-{}", &page_id[..8]),
+        page_type: "qa".to_string(),
+        body_markdown: format!("## 问题\n\n{}\n\n## 回答\n\n{}", user_question, asst_msg.content),
+        summary: Some(format!("Q&A: {}", &user_question.chars().take(30).collect::<String>())),
+        tags: None,
+        status: "active".to_string(),
+        confidence: 0.7,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        last_compiled_at: Some(now),
+    };
+
+    repo.save_wiki_page(&page).map_err(|e| e.to_string())?;
+    Ok(page)
+}
+
+// Legacy compatibility — keep old commands but delegate
 #[tauri::command]
 pub fn get_wiki_conversations(
     state: State<'_, AppState>,
@@ -241,49 +440,6 @@ pub fn get_wiki_conversations(
     let repo = Repository::new(state.db.clone());
     repo.get_wiki_conversations(limit.unwrap_or(20))
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn save_answer_as_page(
-    state: State<'_, AppState>,
-    conversation_id: String,
-) -> Result<WikiPage, String> {
-    let repo = Repository::new(state.db.clone());
-    let convs = repo
-        .get_wiki_conversations(100)
-        .map_err(|e| e.to_string())?;
-    let conv = convs
-        .into_iter()
-        .find(|c| c.id == conversation_id)
-        .ok_or_else(|| "对话不存在".to_string())?;
-
-    let page_id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let title = if conv.question.len() > 30 {
-        format!("{}...", &conv.question[..30])
-    } else {
-        conv.question.clone()
-    };
-
-    let page = WikiPage {
-        id: page_id.clone(),
-        title,
-        slug: format!("qa-{}", &page_id[..8]),
-        page_type: "concept".to_string(),
-        body_markdown: format!("## 问题\n\n{}\n\n## 回答\n\n{}", conv.question, conv.answer),
-        summary: Some(format!("Q&A: {}", &conv.question.chars().take(30).collect::<String>())),
-        tags: None,
-        status: "active".to_string(),
-        confidence: 0.8,
-        created_at: now.clone(),
-        updated_at: now.clone(),
-        last_compiled_at: Some(now),
-    };
-
-    repo.save_wiki_page(&page).map_err(|e| e.to_string())?;
-    let _ = repo.update_conversation_saved_page(&conversation_id, &page_id);
-
-    Ok(page)
 }
 
 // ===== Lint =====
