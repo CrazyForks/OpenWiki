@@ -8,7 +8,7 @@ use crate::storage::models::CaptureEvent;
 use crate::storage::repository::Repository;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 /// Time window in milliseconds for deduplication.
@@ -110,6 +110,32 @@ fn compute_dedup_keys(event: &serde_json::Value) -> Vec<String> {
         }
         _ => vec![format!("other:{}", content_type)],
     }
+}
+
+fn is_xiaoyun_source_app(source_app: &str) -> bool {
+    source_app.eq_ignore_ascii_case("xiaoyun")
+}
+
+fn should_show_confirmation_bubble(event: &serde_json::Value) -> bool {
+    let content_type = event
+        .get("content_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    if content_type != "text" {
+        return true;
+    }
+
+    let from_clipboard = event
+        .get("from_clipboard")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let source_app = event
+        .get("source_app")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    !from_clipboard || is_xiaoyun_source_app(source_app)
 }
 
 /// Async function to fetch URL content.
@@ -477,18 +503,25 @@ fn show_bubble_without_focus(win: &tauri::WebviewWindow) {
             let workspace: *const AnyObject = objc2::msg_send![workspace_cls, sharedWorkspace];
             let front_app: *const AnyObject = objc2::msg_send![&*workspace, frontmostApplication];
 
-            // 2. Show bubble window without activating
+            // 2. Show bubble window as a non-activating panel
             let ns_view: &AnyObject = &*(ns_view_ptr as *const AnyObject);
             let ns_window: *const AnyObject = objc2::msg_send![ns_view, window];
             if !ns_window.is_null() {
                 let ns_window: &AnyObject = &*ns_window;
+                // Set window level to floating panel (above normal windows)
+                let floating_level: i64 = 3; // NSFloatingWindowLevel
+                let _: () = objc2::msg_send![ns_window, setLevel: floating_level];
+                // Mark as non-activating panel — prevents focus steal entirely
+                // NSWindowStyleMaskNonactivatingPanel = 1 << 7 = 128
+                let style_mask: u64 = objc2::msg_send![ns_window, styleMask];
+                let _: () = objc2::msg_send![ns_window, setStyleMask: style_mask | 128u64];
                 let _: () = objc2::msg_send![ns_window, orderFrontRegardless];
             }
 
-            // 3. Reactivate the previous frontmost app so it keeps keyboard focus
-            if !front_app.is_null() {
-                let _: bool = objc2::msg_send![&*front_app, activateWithOptions: 0u64];
-            }
+            // 3. Do not reactivate the previous app here.
+            // `orderFrontRegardless` is enough to show the bubble, and explicitly
+            // activating another app can wake or raise client windows unexpectedly.
+            let _ = front_app;
         }
     });
 
@@ -613,6 +646,16 @@ fn show_bubble_window(app: &AppHandle) {
         .build()
     {
         Ok(win) => {
+            let app_handle = app.clone();
+            win.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let suppress_arc = app_handle.state::<AppState>().suppress_reopen_until.clone();
+                    if let Ok(mut guard) = suppress_arc.lock() {
+                        *guard = Some(Instant::now() + Duration::from_secs(2));
+                    };
+                }
+            });
+
             #[cfg(target_os = "macos")]
             {
                 if is_circle {
@@ -749,5 +792,40 @@ impl CaptureDetector {
         self.clipboard_watcher.stop();
         self.screenshot_watcher.stop();
         log::info!("Capture detector stopped");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_confirmation_bubble;
+
+    #[test]
+    fn bubble_shows_for_non_text_content() {
+        let event = serde_json::json!({
+            "content_type": "image",
+            "source_app": "WeChat",
+            "from_clipboard": true
+        });
+        assert!(should_show_confirmation_bubble(&event));
+    }
+
+    #[test]
+    fn bubble_is_suppressed_for_external_clipboard_text() {
+        let event = serde_json::json!({
+            "content_type": "text",
+            "source_app": "WeChat",
+            "from_clipboard": true
+        });
+        assert!(!should_show_confirmation_bubble(&event));
+    }
+
+    #[test]
+    fn bubble_is_allowed_for_xiaoyun_clipboard_text() {
+        let event = serde_json::json!({
+            "content_type": "text",
+            "source_app": "xiaoyun",
+            "from_clipboard": true
+        });
+        assert!(should_show_confirmation_bubble(&event));
     }
 }

@@ -37,8 +37,7 @@ pub async fn call_codex_api(
             }
         ],
         "stream": true,
-        "store": false,
-        "temperature": temperature
+        "store": false
     });
 
     let resp = http_client

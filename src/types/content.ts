@@ -20,6 +20,7 @@ export interface CapturedContent {
   digest_action?: string;
   summary?: string;
   tags?: string;
+  digest?: string;
 }
 
 export interface CaptureEvent {

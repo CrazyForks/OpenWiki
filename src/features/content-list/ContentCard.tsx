@@ -541,8 +541,13 @@ function TagChips({ tags, analyzing }: { tags?: string; analyzing?: boolean }) {
       {tagList.map((tag, i) => (
         <span
           key={i}
-          className="text-[11px] font-medium px-2.5 py-0.5 rounded-full
-                     bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400"
+          className="rounded-full px-2.5 py-0.5"
+          style={{
+            fontSize: 12,
+            color: "#F97316",
+            backgroundColor: "#F9731610",
+            border: "1px solid #F9731625",
+          }}
         >
           {tag}
         </span>
@@ -689,6 +694,21 @@ export function FullTextOverlay({
                     alt="Captured"
                     className="max-w-full max-h-[50vh] rounded-xl border border-white/50 dark:border-white/10 object-contain"
                   />
+                </div>
+              )}
+              {/* Digest — paragraph summary */}
+              {content.digest && (
+                <div className="mb-4 rounded-xl p-4" style={{
+                  backgroundColor: "var(--color-surface-raised, #F5F5F0)",
+                  border: "1px solid var(--color-border, #E7E5E4)",
+                }}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: "#F97316" }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#F97316" }}>AI 总结</span>
+                  </div>
+                  <p style={{ fontSize: 13, lineHeight: 1.8, color: "var(--color-text-secondary, #57534E)" }}>
+                    {content.digest}
+                  </p>
                 </div>
               )}
               {/* Text content — auto-formatted */}

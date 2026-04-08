@@ -131,6 +131,20 @@ impl Database {
             log::info!("Migration 006 applied: added summary/tags columns");
         }
 
+        // Migration 007: Add digest column to captured_content
+        let has_digest: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('captured_content') WHERE name='digest'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if !has_digest {
+            conn.execute_batch("ALTER TABLE captured_content ADD COLUMN digest TEXT;")?;
+            log::info!("Migration 007 applied: added digest column");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }

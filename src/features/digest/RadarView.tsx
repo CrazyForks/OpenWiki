@@ -27,7 +27,7 @@ class RadarErrorBoundary extends Component<{ children: ReactNode }, { error: str
     if (this.state.error) {
       return (
         <div className="px-5 py-8" style={{ color: "var(--color-text-primary)" }}>
-          <h2 className="text-lg font-bold mb-2">雷达加载出错</h2>
+          <h2 className="text-lg font-bold mb-2">洞察加载出错</h2>
           <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{this.state.error}</p>
           <button
             onClick={() => this.setState({ error: null })}
@@ -92,18 +92,20 @@ function RadarViewInner() {
               letterSpacing: "-0.3px",
             }}
           >
-            注意力雷达
+            深度洞察
           </h2>
-          <button
-            onClick={() => triggerAnalysis()}
-            disabled={isAnalyzing || !hasNewContent}
-            className="p-2 rounded-lg text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300
-                       hover:bg-stone-100 dark:hover:bg-white/[0.08]
-                       disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            title="刷新分析"
-          >
-            <RefreshCw size={18} strokeWidth={2} className={isAnalyzing ? "animate-spin" : ""} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => triggerAnalysis()}
+              disabled={isAnalyzing || !hasNewContent}
+              className="p-2 rounded-lg text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300
+                         hover:bg-stone-100 dark:hover:bg-white/[0.08]
+                         disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              title="刷新分析"
+            >
+              <RefreshCw size={18} strokeWidth={2} className={isAnalyzing ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
         {!isLoading && hasFindings && (
           <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
@@ -121,7 +123,7 @@ function RadarViewInner() {
           <EmptyState
             icon={<Key size={48} className="text-stone-300 dark:text-stone-600 mb-4" strokeWidth={1.5} />}
             title="需要配置 AI 服务"
-            desc="注意力雷达需要 AI 来分析你的内容"
+            desc="洞察报告需要 AI 来分析你的内容"
           />
         )}
         {!isLoading && status === "not_enough_content" && (
@@ -153,7 +155,7 @@ function RadarViewInner() {
 
         {/* V3 RadarReport */}
         {!isLoading && hasReport && report && (
-          <>
+          <div>
             <StatsGrid report={report} />
             <Section num="01" title="一眼看穿" subtitle="At a Glance">
               <AtAGlanceBody items={report.at_a_glance} />
@@ -161,7 +163,7 @@ function RadarViewInner() {
             <Section num="02" title="信息食谱" subtitle="摄入结构">
               <InfoDietBody diet={report.info_diet} />
             </Section>
-            <Section num="03" title="潜意识雷达" subtitle="没意识到的关注">
+            <Section num="03" title="潜意识洞察" subtitle="没意识到的关注">
               <SubconsciousBody items={report.subconscious} />
             </Section>
             <Section num="04" title="收藏夹坟场" subtitle="沉没风险">
@@ -190,7 +192,7 @@ function RadarViewInner() {
                 <p className="text-stone-400" style={{ fontSize: 13 }}>正在更新分析...</p>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* V2 Legacy fallback */}
@@ -472,7 +474,7 @@ function GraveyardBody({ graveyard }: { graveyard: Graveyard }) {
             </div>
             <div className="min-w-0 flex-1">
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)", marginBottom: 4 }}>{pick.title}</div>
-              <p style={{ fontSize: 12, lineHeight: 1.6, color: "var(--color-text-muted)", marginBottom: 8 }}>{pick.reason}</p>
+              <p style={{ fontSize: 12, lineHeight: 1.6, color: "var(--color-text-secondary)", marginBottom: 8 }}>{pick.reason}</p>
               {pick.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {pick.tags.map((tag) => (
@@ -677,7 +679,7 @@ function ReportFooter({ footer }: { footer: Footer }) {
   return (
     <div className="text-center py-4 mt-2" style={{ borderTop: "1px solid var(--color-border)" }}>
       <div style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "var(--color-text-muted)" }}>
-        <strong>小云雷达</strong> · {footer.date_range} · {footer.total} 条内容 · {footer.active_days}/{footer.total_days} 天活跃
+        <strong>小云洞察</strong> · {footer.date_range} · {footer.total} 条内容 · {footer.active_days}/{footer.total_days} 天活跃
       </div>
     </div>
   );
@@ -833,4 +835,211 @@ function AnalyzingSkeleton() {
       </div>
     </div>
   );
+}
+
+// ====================================================================
+// HTML Export — self-contained report for browser viewing
+// ====================================================================
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function buildExportHtml(r: import("../../services/radarService").RadarReport): string {
+  const accent = "#F97316";
+  const date = new Date().toISOString().slice(0, 10);
+
+  const statsHtml = `
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-num">${r.meta.total_items}</div><div class="stat-label">保存总数</div></div>
+      <div class="stat"><div class="stat-num">${r.meta.active_days}</div><div class="stat-label">活跃天数</div></div>
+      <div class="stat"><div class="stat-num">${r.meta.annotated_items}</div><div class="stat-label">有标签</div></div>
+      <div class="stat"><div class="stat-num">${esc(r.meta.annotation_rate)}</div><div class="stat-label">标注率</div></div>
+      <div class="stat"><div class="stat-num">${r.meta.source_count}</div><div class="stat-label">信息源</div></div>
+    </div>`;
+
+  const glanceHtml = r.at_a_glance.map(g =>
+    `<div class="glance-item"><p>${esc(g.text)}</p></div>`
+  ).join("");
+
+  const sourcesHtml = r.info_diet.sources.map(s =>
+    `<div class="source-row">
+      <span class="source-name">${esc(s.name)}</span>
+      <div class="source-bar"><div class="source-fill" style="width:${s.percent}%;background:${sourceGradientCss(s.color)}"></div></div>
+      <span class="source-count">${s.count}</span>
+    </div>`
+  ).join("");
+
+  const subconsciousHtml = r.subconscious.map(s =>
+    `<div class="card">
+      <div class="card-title">${esc(s.title)}</div>
+      <p>${esc(s.body)}</p>
+      ${s.evidence_count ? `<span class="badge">${s.evidence_count} 条证据</span>` : ""}
+    </div>`
+  ).join("");
+
+  const graveyardHtml = r.graveyard.top_picks.map(p =>
+    `<div class="card">
+      <div class="pick-rank">${p.rank}</div>
+      <div class="pick-body">
+        <div class="card-title">${esc(p.title)}</div>
+        <p>${esc(p.reason)}</p>
+        <div class="tag-row">${p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      </div>
+    </div>`
+  ).join("");
+
+  const blindSpotsHtml = r.blind_spots.map(b =>
+    `<div class="card"><div class="card-title">${esc(b.title)}</div><p>${esc(b.body)}</p></div>`
+  ).join("");
+
+  const actionsHtml = r.actions.map(a =>
+    `<div class="card action-card">
+      <span class="action-icon">${a.icon}</span>
+      <div>
+        <div class="card-title">${esc(a.title)}</div>
+        <p>${esc(a.desc)}</p>
+        <div class="action-meta">${esc(a.action_ref)} · ${esc(a.time)}</div>
+      </div>
+    </div>`
+  ).join("");
+
+  const heatmapHtml = r.heatmap.map(d => {
+    const intensity = Math.min(d.count / Math.max(...r.heatmap.map(h => h.count)), 1);
+    const bg = d.count === 0 ? "#1C1917" : `rgba(249,115,22,${0.2 + intensity * 0.8})`;
+    return `<div class="heat-cell" style="background:${bg}" title="${d.date}: ${d.count}条">${d.count || ""}</div>`;
+  }).join("");
+
+  const topicHtml = r.topic_cloud.map(t =>
+    `<span class="topic-tag">${esc(t.name)} ${t.percent.toFixed(0)}%</span>`
+  ).join("");
+
+  const verdictText = r.verdict.highlights.reduce(
+    (text, hl) => text.replace(hl, `<span class="hl">${hl}</span>`),
+    esc(r.verdict.text)
+  );
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小云洞察 · ${date}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0C0A09; color: #FAFAF8; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; padding: 40px 20px; max-width: 640px; margin: 0 auto; -webkit-font-smoothing: antialiased; }
+  h1 { font-family: 'Cabinet Grotesk', sans-serif; font-size: 28px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.5px; }
+  h1 span { color: ${accent}; }
+  .subtitle { font-size: 13px; color: #A8A29E; margin-bottom: 32px; }
+  .section { margin-bottom: 28px; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #292524; }
+  .section-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: ${accent}; background: ${accent}15; border: 1px solid ${accent}30; border-radius: 6px; padding: 2px 8px; }
+  .section-title { font-family: 'Cabinet Grotesk', sans-serif; font-size: 16px; font-weight: 700; }
+  .section-subtitle { font-size: 12px; color: #A8A29E; margin-left: auto; }
+  .stats-grid { display: flex; gap: 12px; margin-bottom: 28px; }
+  .stat { flex: 1; text-align: center; background: #1C1917; border: 1px solid #292524; border-radius: 12px; padding: 16px 8px; }
+  .stat-num { font-family: 'Cabinet Grotesk', sans-serif; font-size: 24px; font-weight: 700; color: ${accent}; }
+  .stat-label { font-size: 11px; color: #A8A29E; margin-top: 4px; }
+  .card { background: #1C1917; border: 1px solid #292524; border-radius: 12px; padding: 16px; margin-bottom: 10px; }
+  .card-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .card p { font-size: 13px; line-height: 1.7; color: #A8A29E; }
+  .badge { display: inline-block; font-size: 11px; color: ${accent}; background: ${accent}15; border: 1px solid ${accent}25; border-radius: 99px; padding: 2px 10px; margin-top: 8px; }
+  .pick-rank { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: ${accent}; color: white; font-weight: 700; font-size: 13px; float: left; margin-right: 12px; margin-top: 2px; }
+  .pick-body { overflow: hidden; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag { font-size: 12px; color: ${accent}; background: ${accent}10; border: 1px solid ${accent}25; border-radius: 99px; padding: 3px 12px; }
+  .action-card { display: flex; gap: 12px; align-items: flex-start; }
+  .action-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+  .action-meta { font-size: 11px; color: #78716C; margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+  .source-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .source-name { font-size: 12px; color: #A8A29E; width: 70px; flex-shrink: 0; text-align: right; }
+  .source-bar { flex: 1; height: 20px; background: #292524; border-radius: 4px; overflow: hidden; }
+  .source-fill { height: 100%; border-radius: 4px; }
+  .source-count { font-size: 12px; color: #78716C; width: 30px; font-family: 'JetBrains Mono', monospace; }
+  .alert { font-size: 12px; color: #CA8A04; background: #422006; border: 1px solid #854D0E44; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+  .glance-item { margin-bottom: 12px; }
+  .glance-item p { font-size: 14px; line-height: 1.8; color: #D6D3D1; }
+  .heat-row { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+  .heat-cell { width: 36px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: rgba(255,255,255,0.7); }
+  .topic-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .topic-tag { font-size: 13px; color: ${accent}; background: ${accent}10; border: 1px solid ${accent}25; border-radius: 99px; padding: 4px 14px; }
+  .verdict { text-align: center; padding: 24px 20px; background: linear-gradient(135deg, ${accent}12, rgba(234,88,12,0.08)); border: 1px solid ${accent}30; border-radius: 12px; margin-bottom: 20px; }
+  .verdict p { font-family: 'Cabinet Grotesk', sans-serif; font-size: 18px; font-weight: 700; line-height: 1.7; }
+  .hl { color: ${accent}; }
+  .footer { text-align: center; font-size: 11px; color: #78716C; font-family: 'JetBrains Mono', monospace; padding: 16px 0; border-top: 1px solid #292524; }
+  .depth-row { display: flex; gap: 16px; margin: 12px 0; }
+  .depth-item { flex: 1; background: #1C1917; border: 1px solid #292524; border-radius: 10px; padding: 12px; text-align: center; }
+  .depth-label { font-size: 11px; color: #78716C; text-transform: uppercase; }
+  .depth-value { font-size: 16px; font-weight: 700; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>小云<span>洞察</span></h1>
+  <div class="subtitle">${esc(r.meta.date_range)} · ${r.meta.total_items} 条内容 · ${r.meta.active_days} 天活跃</div>
+
+  ${statsHtml}
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">01</span><span class="section-title">一眼看穿</span><span class="section-subtitle">At a Glance</span></div>
+    ${glanceHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">02</span><span class="section-title">信息食谱</span><span class="section-subtitle">摄入结构</span></div>
+    ${sourcesHtml}
+    <div class="depth-row">
+      <div class="depth-item"><div class="depth-label">深度/碎片</div><div class="depth-value">${esc(r.info_diet.depth_ratio.label)}</div></div>
+      <div class="depth-item"><div class="depth-label">主题</div><div class="depth-value">${esc(r.info_diet.dominant_topic.name)} ${r.info_diet.dominant_topic.percent.toFixed(0)}%</div></div>
+    </div>
+    <div class="alert">⚠ ${esc(r.info_diet.alert)}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">03</span><span class="section-title">潜意识洞察</span><span class="section-subtitle">没意识到的关注</span></div>
+    ${subconsciousHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">04</span><span class="section-title">收藏夹坟场</span><span class="section-subtitle">沉没风险</span></div>
+    <div class="alert">🪦 ${esc(r.graveyard.alert)}</div>
+    ${graveyardHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">05</span><span class="section-title">知识空白</span><span class="section-subtitle">被忽视的角度</span></div>
+    ${blindSpotsHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">06</span><span class="section-title">行动建议</span><span class="section-subtitle">可执行</span></div>
+    ${actionsHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">⊹</span><span class="section-title">时间热力图</span><span class="section-subtitle">每日分布</span></div>
+    <div class="heat-row">${heatmapHtml}</div>
+    <div style="font-size:11px;color:#78716C;text-transform:uppercase;margin:12px 0 8px">主题分布</div>
+    <div class="topic-row">${topicHtml}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><span class="section-num">07</span><span class="section-title">一句话总结</span><span class="section-subtitle">Final Verdict</span></div>
+    <div class="verdict"><p>${verdictText}</p></div>
+  </div>
+
+  <div class="footer"><strong>小云洞察</strong> · ${esc(r.footer.date_range)} · ${r.footer.total} 条内容 · ${r.footer.active_days}/${r.footer.total_days} 天活跃</div>
+</body>
+</html>`;
+}
+
+function sourceGradientCss(color: string): string {
+  switch (color) {
+    case "wechat": return "linear-gradient(90deg, #15803D, #22C55E)";
+    case "chrome": return "linear-gradient(90deg, #1D4ED8, #3B82F6)";
+    case "xiaoyun": return `linear-gradient(90deg, #EA580C, ${ACCENT})`;
+    default: return "linear-gradient(90deg, #78716C, #A8A29E)";
+  }
 }

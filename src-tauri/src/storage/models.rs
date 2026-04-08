@@ -50,6 +50,7 @@ pub struct CapturedContent {
     pub digest_action: Option<String>,
     pub summary: Option<String>,
     pub tags: Option<String>,
+    pub digest: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

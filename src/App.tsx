@@ -21,7 +21,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   { id: "content", label: "内容", icon: ClipboardList },
-  { id: "digest", label: "雷达", icon: Target },
+  { id: "digest", label: "洞察", icon: Target },
   { id: "settings", label: "设置", icon: Settings },
 ];
 
