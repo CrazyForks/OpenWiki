@@ -307,6 +307,7 @@ pub async fn compile_content(
             created_at: now.clone(),
             updated_at: now.clone(),
             last_compiled_at: Some(now.clone()),
+            source_message_id: None,
         };
         repo.save_wiki_page(&page).map_err(|e| format!("保存页面失败: {}", e))?;
         repo.add_page_source(&page_id, &content.id, &current_hash)
@@ -390,6 +391,7 @@ pub async fn compile_content(
             created_at: existing_page.created_at.clone(),
             updated_at: now.clone(),
             last_compiled_at: Some(now.clone()),
+            source_message_id: None,
         };
         repo.update_wiki_page(&updated_page)
             .map_err(|e| format!("更新页面失败: {}", e))?;

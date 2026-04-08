@@ -178,6 +178,7 @@ pub struct WikiPage {
     pub created_at: String,
     pub updated_at: String,
     pub last_compiled_at: Option<String>,
+    pub source_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

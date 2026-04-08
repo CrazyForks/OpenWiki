@@ -17,6 +17,8 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
   const [input, setInput] = useState("");
   const [isAsking, setIsAsking] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const inFlightSaveRef = useRef<Set<string>>(new Set());
   const [view, setView] = useState<"list" | "chat">("list");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -103,12 +105,16 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
   }, [input, isAsking, activeSessionId, messages]);
 
   const handleSaveAsPage = async (msgId: string) => {
-    if (!activeSessionId || savingId) return;
+    // Synchronous ref check prevents double-click race
+    if (!activeSessionId || inFlightSaveRef.current.has(msgId) || savedIds.has(msgId)) return;
+    inFlightSaveRef.current.add(msgId);
     setSavingId(msgId);
     try {
-      const page = await saveMessageAsPage(activeSessionId, msgId);
-      if (onNavigateToPage) onNavigateToPage(page.id);
+      await saveMessageAsPage(activeSessionId, msgId);
+      setSavedIds((prev) => new Set(prev).add(msgId));
     } catch (e) {
+      // Backend returns existing page on dedup, so "error" here is a real failure
+      inFlightSaveRef.current.delete(msgId);
       alert(`保存失败: ${e}`);
     }
     setSavingId(null);
@@ -310,16 +316,24 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
                     )}
                     {/* Save button — only for non-ai_only */}
                     {msg.source_mode && msg.source_mode !== "ai_only" && (
-                      <button
-                        onClick={() => handleSaveAsPage(msg.id)}
-                        disabled={savingId === msg.id}
-                        className="flex items-center gap-1 mt-1.5 px-2 py-1 rounded text-[10px] font-medium
-                          hover:bg-orange-500/10 transition-colors disabled:opacity-40"
-                        style={{ color: "#F97316" }}
-                      >
-                        {savingId === msg.id ? <Loader size={10} className="animate-spin" /> : <BookOpen size={10} />}
-                        {savingId === msg.id ? "保存中..." : "存入知识库"}
-                      </button>
+                      savedIds.has(msg.id) ? (
+                        <span className="flex items-center gap-1 mt-1.5 px-2 py-1 text-[10px] font-medium"
+                          style={{ color: "#16A34A" }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          已存入知识库
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleSaveAsPage(msg.id)}
+                          disabled={savingId === msg.id}
+                          className="flex items-center gap-1 mt-1.5 px-2 py-1 rounded text-[10px] font-medium
+                            hover:bg-orange-500/10 transition-colors disabled:opacity-40"
+                          style={{ color: "#F97316" }}
+                        >
+                          {savingId === msg.id ? <Loader size={10} className="animate-spin" /> : <BookOpen size={10} />}
+                          {savingId === msg.id ? "保存中..." : "存入知识库"}
+                        </button>
+                      )
                     )}
                   </div>
                 )}

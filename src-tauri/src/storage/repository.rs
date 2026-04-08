@@ -1225,12 +1225,12 @@ impl Repository {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
-            "INSERT INTO wiki_pages (id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO wiki_pages (id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 page.id, page.title, page.slug, page.page_type, page.body_markdown,
                 page.summary, page.tags, page.status, page.confidence,
-                page.created_at, page.updated_at, page.last_compiled_at,
+                page.created_at, page.updated_at, page.last_compiled_at, page.source_message_id,
             ],
         )?;
         Ok(())
@@ -1268,7 +1268,7 @@ impl Repository {
     ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
@@ -1284,7 +1284,7 @@ impl Repository {
                 confidence: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
-                last_compiled_at: row.get(11)?,
+                last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         match rows.next() {
@@ -1300,7 +1300,7 @@ impl Repository {
     ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE slug = ?1"
         )?;
         let mut rows = stmt.query_map(params![slug], |row| {
@@ -1316,7 +1316,7 @@ impl Repository {
                 confidence: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
-                last_compiled_at: row.get(11)?,
+                last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         match rows.next() {
@@ -1333,7 +1333,7 @@ impl Repository {
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE status IN ('active', 'needs_recompile') ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2"
         )?;
         let rows = stmt.query_map(params![limit, offset], |row| {
@@ -1341,7 +1341,7 @@ impl Repository {
                 id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
                 page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
                 tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
@@ -1357,7 +1357,7 @@ impl Repository {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE status IN ('active', 'needs_recompile')
              AND page_type != 'qa'
              AND (title LIKE ?1 OR summary LIKE ?1 OR tags LIKE ?1 OR body_markdown LIKE ?1)
@@ -1368,7 +1368,7 @@ impl Repository {
                 id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
                 page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
                 tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
@@ -1382,7 +1382,7 @@ impl Repository {
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE page_type = ?1 AND status IN ('active', 'needs_recompile') ORDER BY updated_at DESC"
         )?;
         let rows = stmt.query_map(params![page_type], |row| {
@@ -1390,7 +1390,7 @@ impl Repository {
                 id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
                 page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
                 tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
@@ -1404,7 +1404,7 @@ impl Repository {
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE status = ?1 ORDER BY updated_at DESC"
         )?;
         let rows = stmt.query_map(params![status], |row| {
@@ -1412,7 +1412,7 @@ impl Repository {
                 id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
                 page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
                 tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
@@ -1929,6 +1929,31 @@ impl Repository {
             params![session_id], |r| r.get(0),
         )?;
         Ok(max.unwrap_or(-1) + 1)
+    }
+
+    pub fn get_wiki_page_by_source_message_id(
+        &self,
+        message_id: &str,
+    ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
+             FROM wiki_pages WHERE source_message_id = ?1"
+        )?;
+        let mut rows = stmt.query_map(params![message_id], |row| {
+            Ok(super::models::WikiPage {
+                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
+                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
+                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
+                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(page)) => Ok(Some(page)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
     }
 
     /// Get page summaries for Q&A retrieval, excluding qa-type pages.

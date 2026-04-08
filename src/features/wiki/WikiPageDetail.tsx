@@ -45,6 +45,7 @@ interface WikiPageDetailProps {
 export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }: WikiPageDetailProps) {
   const [sources, setSources] = useState<(WikiPageSource & { content?: CapturedContent })[]>([]);
   const [loadingSources, setLoadingSources] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const IconComponent = TYPE_ICONS[page.page_type] || BookOpen;
 
   useEffect(() => {
@@ -108,13 +109,30 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
             )}
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => { if (confirm("确定删除此知识页面？")) onDelete(page.id); }}
-              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-stone-400 hover:text-red-500 transition-colors"
-              title="删除页面"
-            >
-              <Trash2 size={16} />
-            </button>
+            {deleteConfirm ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { onDelete(page.id); setDeleteConfirm(false); }}
+                  className="px-2 py-1 rounded-md text-[11px] font-medium text-white bg-red-500 hover:bg-red-600 transition-colors"
+                >
+                  确认删除
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  className="px-2 py-1 rounded-md text-[11px] text-stone-400 hover:text-stone-600 transition-colors"
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-stone-400 hover:text-red-500 transition-colors"
+                title="删除页面"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-white/[0.08] text-stone-400 transition-colors"

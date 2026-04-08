@@ -192,6 +192,21 @@ impl Database {
             log::info!("Migration 010 applied: added chat session tables");
         }
 
+        // Migration 011: Add source_message_id to wiki_pages
+        let has_source_message_id: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('wiki_pages') WHERE name='source_message_id'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if !has_source_message_id {
+            let migration_011 = include_str!("migrations/011_add_source_message_id.sql");
+            conn.execute_batch(migration_011)?;
+            log::info!("Migration 011 applied: added source_message_id to wiki_pages");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }

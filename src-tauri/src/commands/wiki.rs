@@ -402,6 +402,11 @@ pub async fn save_message_as_page(
         return Err("纯 AI 回答不能保存为知识页面（无知识库来源支撑）".to_string());
     }
 
+    // Dedup: check if this message was already saved (DB-enforced via UNIQUE index)
+    if let Ok(Some(existing)) = repo.get_wiki_page_by_source_message_id(&message_id) {
+        return Ok(existing);
+    }
+
     // Find the preceding user question
     let user_question = messages.iter().rev()
         .find(|m| m.turn_index < asst_msg.turn_index && m.role == "user")
@@ -425,6 +430,7 @@ pub async fn save_message_as_page(
         created_at: now.clone(),
         updated_at: now.clone(),
         last_compiled_at: Some(now),
+        source_message_id: Some(message_id.clone()),
     };
 
     repo.save_wiki_page(&page).map_err(|e| e.to_string())?;
