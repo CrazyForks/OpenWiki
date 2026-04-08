@@ -17,5 +17,9 @@ pub fn get_all_content(
 #[tauri::command]
 pub fn delete_content(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let repo = Repository::new(state.db.clone());
+    // Wiki lifecycle: update source status and page confidence
+    if let Err(e) = crate::ai::wiki_engine::on_content_deleted(state.db.clone(), &id) {
+        log::warn!("Wiki content deletion hook failed for {}: {}", id, e);
+    }
     repo.delete_content(&id).map_err(|e| e.to_string())
 }

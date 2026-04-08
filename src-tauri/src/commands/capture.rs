@@ -734,6 +734,24 @@ pub fn spawn_summary_task(
     tauri::async_runtime::spawn(async move {
         let repo = crate::storage::repository::Repository::new(db.clone());
 
+        // Helper: trigger wiki auto-compile after summary is saved
+        let maybe_wiki_compile = |db_ref: std::sync::Arc<crate::storage::database::Database>, cid: String| {
+            let wiki_auto = crate::storage::repository::Repository::new(db_ref.clone())
+                .get_setting("wiki_auto_compile")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "true".to_string())
+                == "true";
+            if wiki_auto {
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    if let Err(e) = crate::ai::wiki_engine::auto_compile(db_ref, &cid).await {
+                        log::warn!("Wiki auto-compile failed for {}: {}", cid, e);
+                    }
+                });
+            }
+        };
+
         let provider_str = repo
             .get_setting("ai_provider")
             .ok()
@@ -800,6 +818,7 @@ pub fn spawn_summary_task(
                                 &digest,
                             );
                             let _ = app.emit("content-summary-ready", &content_id);
+                            maybe_wiki_compile(db.clone(), content_id.clone());
                             log::info!(
                                 "Summary generated for {}: [{}] {}",
                                 content_id,
@@ -830,6 +849,7 @@ pub fn spawn_summary_task(
                             let tags_str = tags.join(",");
                             let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
                             let _ = app.emit("content-summary-ready", &content_id);
+                            maybe_wiki_compile(db.clone(), content_id.clone());
                             log::info!("Summary generated for {}: [{}] {}", content_id, tags_str, summary);
                         }
                         return;
@@ -858,6 +878,7 @@ pub fn spawn_summary_task(
                     let tags_str = tags.join(",");
                     let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
                     let _ = app.emit("content-summary-ready", &content_id);
+                    maybe_wiki_compile(db.clone(), content_id.clone());
                     log::info!(
                         "Summary generated for {}: [{}] {}",
                         content_id,
