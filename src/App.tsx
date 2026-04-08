@@ -9,7 +9,9 @@ import { WikiView } from "./features/wiki/WikiView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
 import { searchContent } from "./services/dataHubService";
+import { searchWiki } from "./services/wikiService";
 import type { CapturedContent } from "./types/content";
+import type { WikiPage } from "./types/wiki";
 // FloatingBubble is now a separate system-level window (see BubbleView.tsx)
 
 type TabId = "content" | "wiki" | "digest" | "datahub" | "settings";
@@ -32,28 +34,35 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CapturedContent[]>([]);
+  const [wikiSearchResults, setWikiSearchResults] = useState<WikiPage[]>([]);
   const [searching, setSearching] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadFromDB = useSettingsStore((s) => s.loadFromDB);
   const setHighlightedIds = useContentStore((s) => s.setHighlightedIds);
 
-  // Debounced search
+  // Debounced search — searches both content and wiki pages
   const doSearch = useCallback((query: string) => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!query.trim()) {
       setSearchResults([]);
+      setWikiSearchResults([]);
       setSearching(false);
       return;
     }
     setSearching(true);
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchContent(query.trim());
-        setSearchResults(results);
+        const [contentResults, wikiResults] = await Promise.all([
+          searchContent(query.trim()),
+          searchWiki(query.trim()),
+        ]);
+        setSearchResults(contentResults);
+        setWikiSearchResults(wikiResults);
       } catch (e) {
         console.error("Search failed:", e);
         setSearchResults([]);
+        setWikiSearchResults([]);
       }
       setSearching(false);
     }, 300);
@@ -122,6 +131,25 @@ function App() {
     return () => window.removeEventListener("navigate-to-content", handler);
   }, [switchTab]);
 
+  // Listen for "navigate-to-wiki-page" events from ContentCard's knowledge tags
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<{ pageId?: string }>;
+      switchTab("wiki");
+      // WikiView will pick up the page selection via store
+      if (customEvent.detail?.pageId) {
+        // Small delay to let WikiView mount, then select page
+        setTimeout(() => {
+          import("./stores/wikiStore").then(({ useWikiStore }) => {
+            useWikiStore.getState().selectPage(customEvent.detail?.pageId ?? "");
+          });
+        }, 100);
+      }
+    };
+    window.addEventListener("navigate-to-wiki-page", handler);
+    return () => window.removeEventListener("navigate-to-wiki-page", handler);
+  }, [switchTab]);
+
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#FAFAF8] dark:bg-[#0C0A09] transition-colors duration-300">
       {/* Header: single-row layout, traffic lights + brand + tabs + search in one bar */}
@@ -177,6 +205,7 @@ function App() {
                         setSearchOpen(false);
                         setSearchQuery("");
                         setSearchResults([]);
+                        setWikiSearchResults([]);
                       }
                     }}
                     placeholder="搜索内容..."
@@ -195,46 +224,99 @@ function App() {
                                     rounded-xl shadow-lg z-50">
                       {searching ? (
                         <div className="px-3 py-4 text-center text-xs text-gray-400 dark:text-slate-500">搜索中...</div>
-                      ) : searchResults.length === 0 ? (
+                      ) : searchResults.length === 0 && wikiSearchResults.length === 0 ? (
                         <div className="px-3 py-4 text-center text-xs text-gray-400 dark:text-slate-500">无结果</div>
                       ) : (
-                        searchResults.map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              switchTab("content", [item.id]);
-                              setSearchOpen(false);
-                              setSearchQuery("");
-                              setSearchResults([]);
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-orange-500/10 dark:hover:bg-orange-500/15
-                                       border-b border-gray-100/50 dark:border-white/[0.04] last:border-0 transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs flex-shrink-0">
-                                {item.content_type === "image" ? "📷" : item.content_type === "url" ? "🔗" : "📝"}
-                              </span>
-                              <p className="text-xs text-gray-700 dark:text-gray-200 truncate flex-1">
-                                {item.raw_text?.slice(0, 80) || item.source_url || "无内容"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-0.5 ml-5">
-                              <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                {item.captured_at?.slice(0, 10)}
-                              </span>
-                              <span className="text-[10px] text-gray-300 dark:text-slate-600">·</span>
-                              <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                                {item.source_app}
-                              </span>
-                            </div>
-                          </button>
-                        ))
+                        <>
+                          {/* Wiki results first */}
+                          {wikiSearchResults.length > 0 && (
+                            <>
+                              <div className="px-3 py-1.5 text-[10px] font-semibold text-orange-500 bg-orange-500/5">
+                                知识页面
+                              </div>
+                              {wikiSearchResults.slice(0, 3).map((wp) => (
+                                <button
+                                  key={`wiki-${wp.id}`}
+                                  onClick={() => {
+                                    switchTab("wiki");
+                                    setTimeout(() => {
+                                      import("./stores/wikiStore").then(({ useWikiStore }) => {
+                                        useWikiStore.getState().selectPage(wp.id);
+                                      });
+                                    }, 100);
+                                    setSearchOpen(false);
+                                    setSearchQuery("");
+                                    setSearchResults([]);
+                                    setWikiSearchResults([]);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-orange-500/10 dark:hover:bg-orange-500/15
+                                             border-b border-gray-100/50 dark:border-white/[0.04] transition-colors"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <BookOpen size={12} className="flex-shrink-0 text-orange-500" />
+                                    <p className="text-xs text-gray-700 dark:text-gray-200 truncate flex-1 font-medium">
+                                      {wp.title}
+                                    </p>
+                                    <span className="text-[10px] text-orange-400 flex-shrink-0">{wp.page_type}</span>
+                                  </div>
+                                  {wp.summary && (
+                                    <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate mt-0.5 ml-5">
+                                      {wp.summary}
+                                    </p>
+                                  )}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {/* Content results */}
+                          {searchResults.length > 0 && (
+                            <>
+                              {wikiSearchResults.length > 0 && (
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 dark:text-slate-500 bg-gray-50/50 dark:bg-white/[0.02]">
+                                  捕获内容
+                                </div>
+                              )}
+                              {searchResults.map((item) => (
+                                <button
+                                  key={item.id}
+                                  onClick={() => {
+                                    switchTab("content", [item.id]);
+                                    setSearchOpen(false);
+                                    setSearchQuery("");
+                                    setSearchResults([]);
+                                    setWikiSearchResults([]);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-orange-500/10 dark:hover:bg-orange-500/15
+                                             border-b border-gray-100/50 dark:border-white/[0.04] last:border-0 transition-colors"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs flex-shrink-0">
+                                      {item.content_type === "image" ? "📷" : item.content_type === "url" ? "🔗" : "📝"}
+                                    </span>
+                                    <p className="text-xs text-gray-700 dark:text-gray-200 truncate flex-1">
+                                      {item.raw_text?.slice(0, 80) || item.source_url || "无内容"}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5 ml-5">
+                                    <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                      {item.captured_at?.slice(0, 10)}
+                                    </span>
+                                    <span className="text-[10px] text-gray-300 dark:text-slate-600">·</span>
+                                    <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                                      {item.source_app}
+                                    </span>
+                                  </div>
+                                </button>
+                              ))}
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
                 </div>
                 <button
-                  onClick={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }}
+                  onClick={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setWikiSearchResults([]); }}
                   className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

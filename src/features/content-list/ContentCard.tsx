@@ -5,10 +5,12 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import type { CapturedContent } from "../../types/content";
 import { deleteContent, retryUrlFetch, ocrImage } from "../../services/storageService";
+import { compileContentToWiki, getContentWikiPages } from "../../services/wikiService";
 
 import { useContentStore } from "../../stores/contentStore";
 import { useDataHubStore } from "../../stores/dataHubStore";
 import { ImagePreview } from "./ImagePreview";
+import type { WikiPage } from "../../types/wiki";
 
 interface ContentCardProps {
   content: CapturedContent;
@@ -42,8 +44,31 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const [deleteState, setDeleteState] = useState<"idle" | "confirm" | "deleting">("idle");
   const [ocrState, setOcrState] = useState<"idle" | "running" | "done">("idle");
   const [ocrText, setOcrText] = useState<string | null>(null);
+  const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done">("idle");
+  const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
 
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load linked wiki pages on mount
+  useEffect(() => {
+    getContentWikiPages(content.id).then(setLinkedWikiPages).catch(() => {});
+  }, [content.id]);
+
+  const handleWikiCompile = async () => {
+    if (wikiState === "compiling") return;
+    setWikiState("compiling");
+    try {
+      await compileContentToWiki(content.id);
+      setWikiState("done");
+      // Refresh linked pages
+      const pages = await getContentWikiPages(content.id);
+      setLinkedWikiPages(pages);
+      setTimeout(() => setWikiState("idle"), 2000);
+    } catch (e) {
+      console.error("Wiki compile failed:", e);
+      setWikiState("idle");
+    }
+  };
 
   const handleDelete = async () => {
     if (deleteState === "idle") {
@@ -363,6 +388,21 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
                   {copied ? "已复制" : "复制"}
                 </button>
               )}
+              {(content.raw_text || content.user_note || content.source_url) && (
+                <button
+                  onClick={handleWikiCompile}
+                  disabled={wikiState === "compiling"}
+                  className={`px-2 py-1 rounded-md text-[11px] transition-all
+                    ${wikiState === "done"
+                      ? "text-green-600 dark:text-green-400"
+                      : wikiState === "compiling"
+                      ? "text-orange-400 dark:text-orange-500 opacity-60"
+                      : "text-gray-400 dark:text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-500/10 dark:hover:bg-orange-500/15"
+                    }`}
+                >
+                  {wikiState === "done" ? "已入库" : wikiState === "compiling" ? "编译中..." : "入知识库"}
+                </button>
+              )}
               <button
                 onClick={handleDelete}
                 disabled={deleteState === "deleting"}
@@ -378,6 +418,30 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
               </button>
             </div>
           </div>
+            {/* Wiki linked pages */}
+            {linkedWikiPages.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
+                <span style={{ fontSize: 10, color: "var(--color-text-muted, #A8A29E)" }}>关联知识</span>
+                {linkedWikiPages.slice(0, 3).map((wp) => (
+                  <button
+                    key={wp.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent("navigate-to-wiki-page", { detail: { pageId: wp.id } }));
+                    }}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors
+                               hover:bg-orange-100 dark:hover:bg-orange-500/15"
+                    style={{
+                      color: "#F97316",
+                      backgroundColor: "#F9731610",
+                      border: "1px solid #F9731625",
+                    }}
+                  >
+                    {wp.title}
+                  </button>
+                ))}
+              </div>
+            )}
             </div>{/* close content body */}
           </div>{/* close flex row */}
         </div>
