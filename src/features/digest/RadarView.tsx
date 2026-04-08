@@ -211,7 +211,23 @@ function RadarViewInner() {
 
         {/* Analyzing with no data */}
         {!isLoading && isAnalyzing && !hasFindings && <AnalyzingSkeleton />}
+
+        {/* Wiki health section */}
+        <WikiLintSectionLazy />
       </div>
+    </div>
+  );
+}
+
+function WikiLintSectionLazy() {
+  const [WikiLint, setWikiLint] = useState<React.ComponentType<{ compact?: boolean }> | null>(null);
+  useEffect(() => {
+    import("../wiki/WikiLintSection").then((m) => setWikiLint(() => m.WikiLintSection));
+  }, []);
+  if (!WikiLint) return null;
+  return (
+    <div className="mt-6 pt-4" style={{ borderTop: "1px solid var(--color-border, #E7E5E4)" }}>
+      <WikiLint compact />
     </div>
   );
 }

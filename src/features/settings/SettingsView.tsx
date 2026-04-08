@@ -887,6 +887,129 @@ function ExportSection({ totalItems }: { totalItems: number }) {
           </div>
         </div>
       )}
+
+      {/* Wiki settings */}
+      <WikiSettingsSection />
+    </div>
+  );
+}
+
+function WikiSettingsSection() {
+  const [stats, setStats] = useState<{ total_pages: number; total_edges: number; total_sources: number } | null>(null);
+  const [autoCompile, setAutoCompile] = useState(true);
+  const [compiling, setCompiling] = useState(false);
+  const [compileResult, setCompileResult] = useState("");
+
+  useEffect(() => {
+    import("../../services/wikiService").then(async (ws) => {
+      try {
+        const s = await ws.getWikiStats();
+        setStats(s);
+      } catch {}
+    });
+    import("../../services/settingsService").then(async (ss) => {
+      try {
+        const settings = await ss.getSettings();
+        setAutoCompile(settings.wiki_auto_compile !== "false");
+      } catch {}
+    });
+  }, []);
+
+  const handleToggle = async () => {
+    const newVal = !autoCompile;
+    setAutoCompile(newVal);
+    try {
+      const { updateSetting } = await import("../../services/settingsService");
+      await updateSetting("wiki_auto_compile", newVal ? "true" : "false");
+    } catch (e) {
+      console.error("Failed to update wiki setting:", e);
+    }
+  };
+
+  const handleBatchCompile = async () => {
+    setCompiling(true);
+    setCompileResult("");
+    try {
+      const { triggerWikiAutoCompile } = await import("../../services/wikiService");
+      const result = await triggerWikiAutoCompile();
+      setCompileResult(`已处理 ${result.processed} 条，编译 ${result.compiled} 条${result.errors > 0 ? `，${result.errors} 个错误` : ""}`);
+      // Refresh stats
+      const { getWikiStats } = await import("../../services/wikiService");
+      setStats(await getWikiStats());
+    } catch (e) {
+      setCompileResult(`编译失败: ${e}`);
+    }
+    setCompiling(false);
+  };
+
+  return (
+    <div className="px-5 py-4 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
+      <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--color-text-primary, #1C1917)", marginBottom: 12 }}>
+        知识库
+      </h3>
+
+      {/* Stats */}
+      {stats && (
+        <div className="flex gap-4 mb-4">
+          <div className="text-center">
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#F97316", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
+              {stats.total_pages}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>知识页面</div>
+          </div>
+          <div className="text-center">
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#F97316", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
+              {stats.total_edges}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>关联</div>
+          </div>
+          <div className="text-center">
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#F97316", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
+              {stats.total_sources}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>来源</div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto compile toggle */}
+      <div className="flex items-center justify-between py-2">
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>自动编译</p>
+          <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>新内容自动整理进知识库</p>
+        </div>
+        <button
+          onClick={handleToggle}
+          className="relative w-10 h-5 rounded-full transition-colors"
+          style={{ backgroundColor: autoCompile ? "#F97316" : "var(--color-border, #E7E5E4)" }}
+        >
+          <div
+            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+            style={{ left: autoCompile ? 22 : 2 }}
+          />
+        </button>
+      </div>
+
+      {/* Batch compile button */}
+      <div className="mt-3">
+        <button
+          onClick={handleBatchCompile}
+          disabled={compiling}
+          className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+          style={{
+            backgroundColor: "#F9731615",
+            color: "#F97316",
+            border: "1px solid #F9731630",
+          }}
+        >
+          {compiling ? "编译中..." : "手动触发批量编译"}
+        </button>
+        {compileResult && (
+          <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+            {compileResult}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
