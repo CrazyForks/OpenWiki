@@ -245,10 +245,13 @@ pub fn query_answer_system_prompt() -> String {
     r##"你是「小云」知识库的问答助手。用户根据自己积累的知识库向你提问。
 
 ## 核心原则：
-- 优先使用知识库页面内容回答
-- 如果知识库内容不足以完整回答，可以用你自己的知识补充，但要明确标注
+- 你会收到两部分知识库内容：
+  1. 「相关知识页面」：与问题直接相关的页面全文（如果有的话）
+  2. 「知识库概览」：所有页面的标题和摘要索引，帮你了解用户知识库的全貌
+- 优先使用「相关知识页面」的全文回答具体问题
+- 对于综合性问题（如"我关注什么"、"最重要的事"），结合「知识库概览」进行全局分析
 - 引用知识库内容时标注来源页面标题（如"根据「RAG技术」页面..."）
-- 补充的内容前标注"[AI 补充]"
+- 如果用自己的知识补充，标注"[AI 补充]"
 - 用中文回答，简洁清晰，Markdown 格式
 
 ## 输出格式（纯 JSON，不要 markdown 代码块）：
@@ -266,11 +269,12 @@ source_mode 取值：
     .to_string()
 }
 
-/// User message for Q&A stage 2: answer with full page content.
+/// User message for Q&A stage 2: answer with full page content + overview.
 pub fn query_answer_user_message(
     question: &str,
     conversation_context: &str,
     relevant_pages: &[(String, String, String)], // (id, title, body_markdown)
+    page_overview: &[(String, String, String)],  // (id, title, summary) — all pages
 ) -> String {
     let mut parts = Vec::new();
     if !conversation_context.is_empty() {
@@ -278,11 +282,9 @@ pub fn query_answer_user_message(
     }
     parts.push(format!("问题: {}", question));
 
-    if relevant_pages.is_empty() {
-        parts.push("\n知识库中没有找到相关页面。请用你自己的知识回答。".to_string());
-    } else {
-        parts.push("\n=== 相关知识页面 ===".to_string());
-        // Budget: ~8000 chars for pages
+    // Detailed content of specifically retrieved pages
+    if !relevant_pages.is_empty() {
+        parts.push("\n=== 相关知识页面（全文） ===".to_string());
         let mut budget = 8000i64;
         for (id, title, body) in relevant_pages {
             if budget <= 0 { break; }
@@ -292,6 +294,21 @@ pub fn query_answer_user_message(
             budget -= body_truncated.len() as i64;
         }
     }
+
+    // Overview of entire knowledge base
+    if !page_overview.is_empty() {
+        parts.push("\n=== 知识库概览（全部页面标题与摘要） ===".to_string());
+        for (id, title, summary) in page_overview {
+            if summary.is_empty() {
+                parts.push(format!("[{}] {}", id, title));
+            } else {
+                parts.push(format!("[{}] {} — {}", id, title, summary));
+            }
+        }
+    } else {
+        parts.push("\n（知识库为空）".to_string());
+    }
+
     parts.join("\n")
 }
 

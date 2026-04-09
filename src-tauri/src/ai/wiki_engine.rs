@@ -80,14 +80,14 @@ async fn call_ai(
         .flatten()
         .unwrap_or_else(|| "anthropic".to_string());
 
-    // Try OAuth paths first
+    // Try OAuth paths first (is_deep=true: use strong models for wiki compilation & Q&A)
     if provider_str == "openai" {
         if let Some(result) = crate::ai::attention_analyzer::try_codex_call(
             db.clone(),
             system_prompt,
             user_message,
             0.3,
-            false,
+            true,
         )
         .await
         {
@@ -101,7 +101,7 @@ async fn call_ai(
             system_prompt,
             user_message,
             0.3,
-            false,
+            true,
         )
         .await
         {
@@ -621,6 +621,57 @@ pub async fn call_ai_pub(
 /// Public wrapper for parse_ai_json (used by wiki commands).
 pub fn parse_ai_json_pub(raw: &str) -> Result<serde_json::Value, String> {
     parse_ai_json(raw)
+}
+
+/// Link pages that share tags with bidirectional "related" edges.
+/// Returns the number of edges created/updated.
+pub fn link_pages_by_shared_tags(db: Arc<Database>) -> Result<usize, String> {
+    let repo = Repository::new(db);
+    let pages = repo
+        .get_all_wiki_pages(1000, 0)
+        .map_err(|e| e.to_string())?;
+
+    // Parse and normalize tags for each page
+    let page_tags: Vec<(&str, Vec<String>)> = pages
+        .iter()
+        .filter_map(|p| {
+            let tags_str = p.tags.as_deref()?;
+            let tags: Vec<String> = serde_json::from_str(tags_str).unwrap_or_default();
+            let normalized: Vec<String> = tags
+                .iter()
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect();
+            if normalized.is_empty() {
+                None
+            } else {
+                Some((p.id.as_str(), normalized))
+            }
+        })
+        .collect();
+
+    let mut count = 0usize;
+
+    for i in 0..page_tags.len() {
+        for j in (i + 1)..page_tags.len() {
+            let (id_a, tags_a) = &page_tags[i];
+            let (id_b, tags_b) = &page_tags[j];
+
+            let shared = tags_a.iter().any(|t| tags_b.contains(t));
+            if shared {
+                let _ = repo.save_wiki_edge(id_a, id_b, "related", 1.0);
+                let _ = repo.save_wiki_edge(id_b, id_a, "related", 1.0);
+                count += 2;
+            }
+        }
+    }
+
+    log::info!(
+        "Wiki tag-linking: {} edges across {} tagged pages",
+        count,
+        page_tags.len()
+    );
+    Ok(count)
 }
 
 /// Handle content update: mark sources as stale if hash changed.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo, Component, type ReactNode } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { forceCollide } from "d3-force";
 import { useWikiStore } from "../../stores/wikiStore";
 import { WikiPageDetail } from "./WikiPageDetail";
 
@@ -82,9 +83,15 @@ function WikiGraphViewInner() {
     selectPage(node.id);
   }, [selectPage]);
 
+  // Compute node radius: gentle growth, capped at 14px
+  const getNodeRadius = useCallback((node: GraphNode) => {
+    return Math.min(4 + Math.sqrt(node.edge_count || 0) * 3, 14);
+  }, []);
+
   const nodeCanvasObject = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const label = node.title;
-    const nodeRadius = Math.max(6, 5 + (node.edge_count || 0) * 2);
+    const maxChars = 12;
+    const label = node.title.length > maxChars ? node.title.slice(0, maxChars) + "…" : node.title;
+    const nodeRadius = getNodeRadius(node);
     const color = TYPE_COLORS[node.page_type] || "#A8A29E";
     const alpha = node.status === "needs_recompile" ? 0.5 : 1.0;
 
@@ -96,20 +103,33 @@ function WikiGraphViewInner() {
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Label — only show when zoomed in enough to read
+    // Label — show when zoomed in enough
     if (globalScale > 0.6) {
-      const fontSize = Math.min(12 / globalScale, 14);
+      const fontSize = Math.min(11 / globalScale, 12);
       ctx.font = `${fontSize}px 'Plus Jakarta Sans', sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       const isDark = document.documentElement.classList.contains("dark");
-      const labelAlpha = Math.min((globalScale - 0.6) / 0.4, 1); // fade in between 0.6-1.0
+      const labelAlpha = Math.min((globalScale - 0.6) / 0.4, 1);
+
+      // Background pill behind label to prevent text-on-text overlap
+      const textWidth = ctx.measureText(label).width;
+      const labelX = (node.x || 0);
+      const labelY = (node.y || 0) + nodeRadius + 3;
+      const bgColor = isDark ? "rgba(28, 25, 23, 0.85)" : "rgba(245, 245, 240, 0.9)";
+      ctx.fillStyle = bgColor;
+      ctx.globalAlpha = labelAlpha;
+      ctx.beginPath();
+      ctx.roundRect(labelX - textWidth / 2 - 2, labelY - 1, textWidth + 4, fontSize + 2, 2);
+      ctx.fill();
+
       ctx.fillStyle = isDark
-        ? `rgba(250, 250, 248, ${0.8 * labelAlpha})`
-        : `rgba(28, 25, 23, ${0.8 * labelAlpha})`;
-      ctx.fillText(label, node.x || 0, (node.y || 0) + nodeRadius + 2);
+        ? `rgba(250, 250, 248, ${0.85 * labelAlpha})`
+        : `rgba(28, 25, 23, ${0.85 * labelAlpha})`;
+      ctx.globalAlpha = 1;
+      ctx.fillText(label, labelX, labelY);
     }
-  }, []);
+  }, [getNodeRadius]);
 
   // useMemo MUST be before any early returns to keep hook count stable
   const graphInput = useMemo(() => {
@@ -125,15 +145,27 @@ function WikiGraphViewInner() {
     };
   }, [graphData]);
 
-  // Configure forces: moderate repulsion + center pull for compact circular layout
+  // Configure forces: compact layout with collision avoidance
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
-    fg.d3Force("charge")?.strength(-120).distanceMax(350);
-    fg.d3Force("link")?.distance(50);
-    fg.d3Force("center")?.strength(0.1);
+    fg.d3Force("charge")?.strength(-100).distanceMax(250);
+    fg.d3Force("link")?.distance(45);
+    fg.d3Force("center")?.strength(0.25);
+    // Collision force: radius accounts for label width (~12 chars max)
+    fg.d3Force("collide", forceCollide((node: any) => {
+      return getNodeRadius(node) + 30;
+    }).strength(0.85));
     fg.d3ReheatSimulation();
-  }, [graphInput]);
+  }, [graphInput, getNodeRadius]);
+
+  // Re-fit graph when container dimensions change (e.g., sidebar close/open)
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg || dimensions.width === 0) return;
+    const timer = setTimeout(() => fg.zoomToFit(300, 40), 200);
+    return () => clearTimeout(timer);
+  }, [dimensions.width, dimensions.height]);
 
   if (isLoadingGraph) {
     return (
@@ -180,7 +212,7 @@ function WikiGraphViewInner() {
         nodeId="id"
         nodeCanvasObject={nodeCanvasObject as any}
         nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-          const r = Math.max(6, 5 + (node.edge_count || 0) * 2);
+          const r = Math.min(4 + Math.sqrt(node.edge_count || 0) * 3, 14);
           ctx.beginPath();
           ctx.arc(node.x || 0, node.y || 0, r + 4, 0, 2 * Math.PI);
           ctx.fillStyle = color;
@@ -196,7 +228,10 @@ function WikiGraphViewInner() {
         enableZoomInteraction={true}
         enablePanInteraction={true}
         backgroundColor={document.documentElement.classList.contains("dark") ? "#1C1917" : "#F5F5F0"}
-        onEngineStop={() => {}}
+        onEngineStop={() => {
+          // Auto-fit all nodes into view after simulation settles
+          graphRef.current?.zoomToFit(400, 40);
+        }}
       />
 
       {selectedPage && (

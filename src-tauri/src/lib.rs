@@ -167,6 +167,7 @@ pub fn run() {
             commands::wiki::save_message_as_page,
             commands::wiki::get_saved_message_ids,
             commands::wiki::get_wiki_conversations,
+            commands::wiki::wiki_link_by_tags,
             commands::wiki::trigger_wiki_lint,
             commands::wiki::get_wiki_lint_results,
             commands::wiki::wiki_lint_keep,

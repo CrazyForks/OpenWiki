@@ -95,6 +95,12 @@ export async function getWikiConversations(limit?: number): Promise<WikiConversa
   return invoke("get_wiki_conversations", { limit: limit ?? 20 });
 }
 
+// ===== Tag-based linking =====
+
+export async function wikiLinkByTags(): Promise<{ edges_created: number }> {
+  return invoke("wiki_link_by_tags");
+}
+
 // ===== Lint =====
 
 export async function triggerWikiLint(): Promise<WikiLintResult[]> {

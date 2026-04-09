@@ -118,8 +118,10 @@ pub async fn compile_content_to_wiki(
     let db = state.db.clone();
     let _ = app.emit("wiki-compile-progress", "compiling");
 
-    match wiki_engine::manual_compile(db, &content_id).await {
+    match wiki_engine::manual_compile(db.clone(), &content_id).await {
         Ok(touched_ids) => {
+            // Auto-link pages by shared tags after compilation
+            let _ = wiki_engine::link_pages_by_shared_tags(db);
             let _ = app.emit("wiki-compile-complete", &touched_ids);
             Ok(touched_ids)
         }
@@ -162,12 +164,16 @@ pub async fn trigger_wiki_auto_compile(
         skipped += 1;
     }
 
+    // Auto-link pages by shared tags after batch compilation
+    let tag_edges = wiki_engine::link_pages_by_shared_tags(db).unwrap_or(0);
+
     let _ = app.emit("wiki-auto-compile-complete", "done");
 
     Ok(serde_json::json!({
         "processed": compiled + skipped,
         "compiled": compiled,
         "errors": errors,
+        "tag_edges": tag_edges,
     }))
 }
 
@@ -249,7 +255,7 @@ pub async fn wiki_ask(
 
     let answer_system = crate::ai::wiki_prompts::query_answer_system_prompt();
     let answer_user = crate::ai::wiki_prompts::query_answer_user_message(
-        &question, &recent_context, &relevant_pages,
+        &question, &recent_context, &relevant_pages, &page_index,
     );
 
     let raw = wiki_engine::call_ai_pub(db.clone(), &answer_system, &answer_user, 2048).await?;
@@ -270,8 +276,9 @@ pub async fn wiki_ask(
                 (a, pids, sm, c)
             }
             Err(_) => {
-                // Malformed JSON — use raw text
-                (raw, vec![], "ai_only".to_string(), 0.3)
+                // Malformed JSON — try to extract "answer" field via regex
+                let extracted = extract_answer_from_malformed_json(&raw);
+                (extracted, vec![], "ai_only".to_string(), 0.3)
             }
         };
 
@@ -305,6 +312,49 @@ pub async fn wiki_ask(
         "source_mode": source_mode,
         "confidence": confidence,
     }))
+}
+
+/// Try to extract the "answer" field from malformed JSON.
+/// Handles cases like: {"answer": "内容...", "page_ids_used": ...}
+/// where the overall JSON is broken but the answer value is recoverable.
+fn extract_answer_from_malformed_json(raw: &str) -> String {
+    // Strategy 1: find "answer" key and extract its string value
+    if let Some(start) = raw.find("\"answer\"") {
+        let after_key = &raw[start + 8..]; // skip "answer"
+        // Skip whitespace and colon
+        let after_colon = after_key.trim_start();
+        if let Some(rest) = after_colon.strip_prefix(':') {
+            let rest = rest.trim_start();
+            if rest.starts_with('"') {
+                // Walk the string, handling escaped quotes
+                let chars: Vec<char> = rest.chars().collect();
+                let mut i = 1; // skip opening quote
+                let mut result = String::new();
+                while i < chars.len() {
+                    if chars[i] == '\\' && i + 1 < chars.len() {
+                        match chars[i + 1] {
+                            'n' => result.push('\n'),
+                            't' => result.push('\t'),
+                            '"' => result.push('"'),
+                            '\\' => result.push('\\'),
+                            other => { result.push('\\'); result.push(other); }
+                        }
+                        i += 2;
+                    } else if chars[i] == '"' {
+                        break; // closing quote
+                    } else {
+                        result.push(chars[i]);
+                        i += 1;
+                    }
+                }
+                if !result.is_empty() {
+                    return result;
+                }
+            }
+        }
+    }
+    // Strategy 2: if nothing worked, strip obvious JSON wrapper
+    raw.to_string()
 }
 
 /// Build conversation context string from recent messages (last N turns).
@@ -480,6 +530,17 @@ pub fn get_wiki_conversations(
     let repo = Repository::new(state.db.clone());
     repo.get_wiki_conversations(limit.unwrap_or(20))
         .map_err(|e| e.to_string())
+}
+
+// ===== Tag-based linking =====
+
+#[tauri::command]
+pub fn wiki_link_by_tags(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let db = state.db.clone();
+    let count = wiki_engine::link_pages_by_shared_tags(db)?;
+    Ok(serde_json::json!({ "edges_created": count }))
 }
 
 // ===== Lint =====
