@@ -1,7 +1,13 @@
 {
   "name": "openwiki",
-  "private": true,
+  "private": false,
   "version": "0.1.0",
+  "description": "Mac desktop AI knowledge management tool — capture clipboard, build personal wiki, get AI insights",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kdsz001/xiaoyun.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -21,7 +21,12 @@ use crate::storage::repository::Repository;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+/// Read from env `OPENAI_OAUTH_CLIENT_ID` at runtime,
+/// so open-source users can supply their own OpenAI OAuth credentials.
+fn openai_client_id() -> String {
+    std::env::var("OPENAI_OAUTH_CLIENT_ID")
+        .unwrap_or_else(|_| String::from("YOUR_OPENAI_CLIENT_ID"))
+}
 const AUTH_URL: &str = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const SCOPES: &str = "openid profile email offline_access";
@@ -222,7 +227,7 @@ async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthToken, String>
     let client = reqwest::Client::new();
     let body = format!(
         "grant_type=authorization_code&client_id={}&code={}&redirect_uri={}&code_verifier={}",
-        CLIENT_ID,
+        openai_client_id(),
         url_encode(code),
         url_encode(REDIRECT_URI),
         url_encode(verifier),
@@ -255,7 +260,7 @@ pub async fn refresh_token(refresh: &str) -> Result<OAuthToken, String> {
     let client = reqwest::Client::new();
     let body = format!(
         "grant_type=refresh_token&client_id={}&refresh_token={}",
-        CLIENT_ID,
+        openai_client_id(),
         url_encode(refresh),
     );
 
@@ -365,7 +370,7 @@ pub async fn start_oauth_login() -> Result<OAuthToken, String> {
     let auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
         AUTH_URL,
-        url_encode(CLIENT_ID),
+        url_encode(&openai_client_id()),
         url_encode(REDIRECT_URI),
         url_encode(SCOPES),
         url_encode(&state_param),

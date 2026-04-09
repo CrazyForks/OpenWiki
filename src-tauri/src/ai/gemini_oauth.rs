@@ -22,9 +22,17 @@ use crate::storage::repository::Repository;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const CLIENT_ID: &str =
-    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-const CLIENT_SECRET: &str = "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";
+/// Read from env `GEMINI_CLIENT_ID` / `GEMINI_CLIENT_SECRET` at runtime,
+/// so open-source users can supply their own Google OAuth credentials.
+fn gemini_client_id() -> String {
+    std::env::var("GEMINI_CLIENT_ID")
+        .unwrap_or_else(|_| String::from("YOUR_GEMINI_CLIENT_ID"))
+}
+fn gemini_client_secret() -> String {
+    std::env::var("GEMINI_CLIENT_SECRET")
+        .unwrap_or_else(|_| String::from("YOUR_GEMINI_CLIENT_SECRET"))
+}
+
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const REDIRECT_URI: &str = "http://localhost:51121/oauth-callback";
@@ -243,8 +251,8 @@ async fn exchange_code(code: &str, verifier: &str) -> Result<(String, Option<Str
     let client = reqwest::Client::new();
     let body = format!(
         "client_id={}&client_secret={}&code={}&grant_type=authorization_code&redirect_uri={}&code_verifier={}",
-        url_encode(CLIENT_ID),
-        url_encode(CLIENT_SECRET),
+        url_encode(&gemini_client_id()),
+        url_encode(&gemini_client_secret()),
         url_encode(code),
         url_encode(REDIRECT_URI),
         url_encode(verifier),
@@ -285,8 +293,8 @@ pub async fn refresh_gemini_token(refresh: &str) -> Result<GeminiOAuthToken, Str
     let body = format!(
         "grant_type=refresh_token&refresh_token={}&client_id={}&client_secret={}",
         url_encode(refresh),
-        url_encode(CLIENT_ID),
-        url_encode(CLIENT_SECRET),
+        url_encode(&gemini_client_id()),
+        url_encode(&gemini_client_secret()),
     );
 
     let resp = client
@@ -420,7 +428,7 @@ pub async fn start_gemini_oauth_login() -> Result<GeminiOAuthToken, String> {
     let auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256&access_type=offline&prompt=consent",
         AUTH_URL,
-        url_encode(CLIENT_ID),
+        url_encode(&gemini_client_id()),
         url_encode(REDIRECT_URI),
         url_encode(SCOPES),
         url_encode(&state_param),

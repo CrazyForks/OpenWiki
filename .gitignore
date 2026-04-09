@@ -26,3 +26,8 @@ dist-ssr
 .omx/
 .codex/
 .context/
+
+# Environment variables (keep .env.example, ignore actual .env)
+.env
+.env.*
+!.env.example
