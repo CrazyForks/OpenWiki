@@ -23,7 +23,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("xiaoyun".into()),
+                        file_name: Some("openwiki".into()),
                     }),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                 ])
@@ -58,7 +58,7 @@ pub fn run() {
             suppress_reopen_until: std::sync::Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(move |app| {
-            eprintln!("[xiaoyun] App setup started");
+            eprintln!("[openwiki] App setup started");
 
             // --- Apply macOS vibrancy + auto-hide on blur ---
             if let Some(spotlight_win) = app.get_webview_window("spotlight") {
@@ -99,9 +99,9 @@ pub fn run() {
             setup_tray(app)?;
 
             // --- Start capture detector (auto-saves to database) ---
-            eprintln!("[xiaoyun] Starting capture detector...");
+            eprintln!("[openwiki] Starting capture detector...");
             detector.start(app.handle().clone());
-            eprintln!("[xiaoyun] Capture detector started!");
+            eprintln!("[openwiki] Capture detector started!");
 
             Ok(())
         })
@@ -269,7 +269,7 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<String> {
     let base = dirs::data_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
 
-    let captures_dir = base.join("com.xiaoyun.app").join("captures");
+    let captures_dir = base.join("com.openwiki.app").join("captures");
     let _ = std::fs::create_dir_all(&captures_dir);
 
     let id = uuid::Uuid::new_v4().to_string();

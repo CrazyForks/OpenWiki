@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, BookOpen, User, FileText, GitCompare, Layers, Trash2, RotateCcw } from "lucide-react";
+import { X, BookOpen, User, FileText, GitCompare, Layers, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { WikiPage, WikiPageSource } from "../../types/wiki";
@@ -7,7 +7,7 @@ import type { CapturedContent } from "../../types/content";
 import { getPageSources } from "../../services/wikiService";
 import { invoke } from "@tauri-apps/api/core";
 
-const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>> = {
   concept: BookOpen,
   entity: User,
   source: FileText,

@@ -12,7 +12,7 @@ fn save_clipboard_image_to_disk(img: &arboard::ImageData) -> Option<String> {
     let base = dirs::data_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
 
-    let captures_dir = base.join("com.xiaoyun.app").join("captures");
+    let captures_dir = base.join("com.openwiki.app").join("captures");
     if let Err(e) = std::fs::create_dir_all(&captures_dir) {
         log::error!("Failed to create captures directory: {}", e);
         return None;
@@ -84,7 +84,7 @@ impl ClipboardWatcher {
             let mut last_content_hash: Option<String> = None;
 
             eprintln!(
-                "[xiaoyun] Clipboard watcher thread started ({}ms)",
+                "[openwiki] Clipboard watcher thread started ({}ms)",
                 interval
             );
             log::info!(
@@ -152,7 +152,7 @@ impl ClipboardWatcher {
 
                             if is_new {
                                 eprintln!(
-                                    "[xiaoyun] New clipboard text detected: {} chars",
+                                    "[openwiki] New clipboard text detected: {} chars",
                                     text.len()
                                 );
                                 last_content_hash = Some(hash);

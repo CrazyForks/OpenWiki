@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import type { CapturedContent } from "../../types/content";
-import { deleteContent, retryUrlFetch, ocrImage } from "../../services/storageService";
+import { deleteContent, retryUrlFetch } from "../../services/storageService";
 import { compileContentToWiki, getContentWikiPages } from "../../services/wikiService";
 
 import { useContentStore } from "../../stores/contentStore";
@@ -37,13 +37,12 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   function ContentCard({ content, isHighlighted = false }, ref) {
   const removeContent = useContentStore((s) => s.removeContent);
   const removeFromDataHub = useDataHubStore((s) => s.removeContent);
-  const updateContent = useContentStore((s) => s.updateContent);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [deleteState, setDeleteState] = useState<"idle" | "confirm" | "deleting">("idle");
-  const [ocrState, setOcrState] = useState<"idle" | "running" | "done">("idle");
-  const [ocrText, setOcrText] = useState<string | null>(null);
+  const [ocrState] = useState<"idle" | "running" | "done">("idle");
+  const [ocrText] = useState<string | null>(null);
   const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done">("idle");
   const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
 
@@ -102,21 +101,6 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
     }
   };
 
-  const handleOcr = async () => {
-    setOcrState("running");
-    try {
-      const text = await ocrImage(content.id);
-      setOcrText(text);
-      setOcrState("done");
-      // Update content in store so copy button works with OCR text
-      updateContent({ ...content, raw_text: text });
-    } catch (e) {
-      console.error("OCR failed:", e);
-      setOcrText(`识别失败: ${e}`);
-      setOcrState("done");
-    }
-  };
-
   const typeConfig = {
     image: { icon: "🖼️", label: "图片", accent: "bg-amber-500/10 dark:bg-amber-500/20" },
     url: { icon: "🔗", label: "链接", accent: "bg-orange-500/10 dark:bg-orange-500/20" },
@@ -124,7 +108,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
     mixed: { icon: "📎", label: "混合", accent: "bg-gray-500/10 dark:bg-gray-500/20" },
   };
 
-  const { icon: typeIcon, label: typeLabel, accent: typeAccent } = typeConfig[content.content_type] || typeConfig.text;
+  const { icon: typeIcon } = typeConfig[content.content_type] || typeConfig.text;
   const timeStr = formatRelativeTime(content.captured_at);
 
   const [retrying, setRetrying] = useState(false);

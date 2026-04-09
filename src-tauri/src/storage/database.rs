@@ -41,8 +41,8 @@ impl Database {
     fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
         let data_dir = dirs::data_dir()
             .ok_or("Could not find data directory")?
-            .join("com.xiaoyun.app");
-        Ok(data_dir.join("xiaoyun.db"))
+            .join("com.openwiki.app");
+        Ok(data_dir.join("openwiki.db"))
     }
 
     fn run_migrations(&self) -> Result<(), Box<dyn std::error::Error>> {

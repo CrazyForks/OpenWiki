@@ -241,7 +241,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   urlReadingEnabled: true,
   radarIntervalDays: 3,
   countdownDuration: 5,
-  screenshotDir: "~/Library/Application Support/com.xiaoyun.app/screenshots",
+  screenshotDir: "~/Library/Application Support/com.openwiki.app/screenshots",
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
@@ -306,7 +306,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
         screenshotDir:
           settings.screenshot_dir ||
-          "~/Library/Application Support/com.xiaoyun.app/screenshots",
+          "~/Library/Application Support/com.openwiki.app/screenshots",
         isLoaded: true,
       });
 

@@ -1,7 +1,7 @@
 import { BookOpen, User, FileText, GitCompare, Layers, MessageCircle } from "lucide-react";
 import type { WikiPage } from "../../types/wiki";
 
-const TYPE_CONFIG: Record<string, { icon: React.ComponentType<{ className?: string; size?: number }>; label: string; color: string }> = {
+const TYPE_CONFIG: Record<string, { icon: React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>; label: string; color: string }> = {
   concept: { icon: BookOpen, label: "概念", color: "#F97316" },
   entity: { icon: User, label: "实体", color: "#2563EB" },
   source: { icon: FileText, label: "来源", color: "#16A34A" },

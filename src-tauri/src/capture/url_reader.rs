@@ -292,7 +292,7 @@ impl UrlReader {
         let repo_json: serde_json::Value = self
             .http_client
             .get(&repo_url)
-            .header("User-Agent", "xiaoyun/0.1")
+            .header("User-Agent", "OpenWiki/0.1")
             .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await
@@ -323,7 +323,7 @@ impl UrlReader {
         let readme_content = match self
             .http_client
             .get(&readme_url)
-            .header("User-Agent", "xiaoyun/0.1")
+            .header("User-Agent", "OpenWiki/0.1")
             .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await
@@ -373,7 +373,7 @@ impl UrlReader {
         let json: serde_json::Value = self
             .http_client
             .get(&json_url)
-            .header("User-Agent", "xiaoyun/0.1")
+            .header("User-Agent", "OpenWiki/0.1")
             .send()
             .await
             .map_err(|e| format!("Reddit: {}", e))?
@@ -460,7 +460,7 @@ impl UrlReader {
         // Step 2: Use yt-dlp to download caption XML (YouTube's timedtext API
         // no longer works with direct requests; yt-dlp uses the Android VR
         // Player API which still returns valid caption URLs)
-        let tmp_dir = std::env::temp_dir().join(format!("xiaoyun_yt_{}", video_id));
+        let tmp_dir = std::env::temp_dir().join(format!("openwiki_yt_{}", video_id));
         let _ = std::fs::create_dir_all(&tmp_dir);
         let out_template = tmp_dir.join("sub");
 
@@ -830,7 +830,7 @@ impl UrlReader {
     async fn get_json(&self, url: &str) -> Result<serde_json::Value, String> {
         self.http_client
             .get(url)
-            .header("User-Agent", "xiaoyun/0.1")
+            .header("User-Agent", "OpenWiki/0.1")
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {}", e))?

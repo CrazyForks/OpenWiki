@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Palette, Bot, Camera, Link as LinkIcon, HardDrive, X, Target } from "lucide-react";
+import { Palette, Bot, Camera, Link as LinkIcon, HardDrive, Target } from "lucide-react";
 import {
   useSettingsStore,
   MODELS_BY_PROVIDER,
   PROVIDER_LABELS,
   type AIProvider,
   type ThemeMode,
-  type BubbleStyle,
   type BubblePosition,
-  type DefaultAction,
 } from "../../stores/settingsStore";
 
 const BUBBLE_POSITION_OPTIONS: { value: BubblePosition; label: string; icon: string }[] = [
@@ -111,11 +109,9 @@ export function SettingsView() {
   }, [loadMcpStatus]);
 
   const handleConnectMcp = async (target: McpTargetId) => {
-    console.log("[MCP] connect clicked, target:", target);
     updateMcpTarget(target, { loading: true, error: null, message: null });
     try {
       const msg = await invoke<string>("connect_mcp", { target });
-      console.log("[MCP] connect success:", msg);
       updateMcpTarget(target, { loading: false, message: msg, connected: true });
     } catch (e) {
       const errMsg = typeof e === "string" ? e : String(e);
@@ -134,19 +130,6 @@ export function SettingsView() {
     }
   };
 
-  const handleCopySummary = async () => {
-    setMcpGlobalError(null);
-    try {
-      const summary = await invoke<string>("copy_content_summary");
-      await navigator.clipboard.writeText(summary);
-      setSummaryCopied(true);
-      setTimeout(() => setSummaryCopied(false), 2000);
-    } catch (e) {
-      setMcpGlobalError(typeof e === "string" ? e : String(e));
-    }
-  };
-
-  const availableModels = MODELS_BY_PROVIDER[provider];
 
   const { setStorageInfo } = useSettingsStore();
 

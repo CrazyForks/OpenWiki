@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { Search, BookOpen, User, FileText, GitCompare, Layers } from "lucide-react";
+import { useEffect, useCallback } from "react";
+import { BookOpen, User, FileText, GitCompare, Layers } from "lucide-react";
 import { useWikiStore } from "../../stores/wikiStore";
 import { WikiPageCard } from "./WikiPageCard";
 import { WikiPageDetail } from "./WikiPageDetail";
@@ -16,24 +16,12 @@ const TYPE_FILTERS = [
 export function WikiBrowseView() {
   const {
     pages, selectedPage, isLoadingPages, filterType, error,
-    loadPages, searchPages, selectPage, clearSelection, setFilterType, deletePage,
+    loadPages, selectPage, clearSelection, setFilterType, deletePage,
   } = useWikiStore();
-
-  const [searchInput, setSearchInput] = useState("");
-  const [searchTimer, setSearchTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadPages();
   }, [loadPages]);
-
-  const handleSearch = useCallback((value: string) => {
-    setSearchInput(value);
-    if (searchTimer) clearTimeout(searchTimer);
-    const timer = setTimeout(() => {
-      searchPages(value);
-    }, 300);
-    setSearchTimer(timer);
-  }, [searchPages, searchTimer]);
 
   const handleNavigateToContent = useCallback((contentId: string) => {
     clearSelection();

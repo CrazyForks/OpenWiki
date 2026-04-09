@@ -34,7 +34,7 @@ fn fallback_preview(item: &CapturedContent) -> String {
 //
 //  Config file: ~/Library/Application Support/Claude/claude_desktop_config.json
 
-const MCP_SERVER_KEY: &str = "xiaoyun";
+const MCP_SERVER_KEY: &str = "openwiki";
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,7 +86,7 @@ pub struct McpStatus {
 fn xiaoyun_db_path() -> Option<String> {
     let base = dirs::data_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
-    let db_path = base.join("com.xiaoyun.app").join("xiaoyun.db");
+    let db_path = base.join("com.openwiki.app").join("openwiki.db");
     Some(db_path.to_string_lossy().to_string())
 }
 

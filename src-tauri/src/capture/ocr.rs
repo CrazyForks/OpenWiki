@@ -7,18 +7,18 @@ static COMPILE_ONCE: Once = Once::new();
 /// Get the path to the compiled OCR binary.
 /// The binary is cached in the system temp directory.
 fn get_ocr_binary_path() -> PathBuf {
-    std::env::temp_dir().join("xiaoyun_ocr_bin")
+    std::env::temp_dir().join("openwiki_ocr_bin")
 }
 
 /// Ensure the OCR Swift tool is compiled (only compiles once per session).
 fn ensure_compiled() -> Result<(), String> {
     let binary_path = get_ocr_binary_path();
-    let script_path = std::env::temp_dir().join("xiaoyun_ocr.swift");
+    let script_path = std::env::temp_dir().join("openwiki_ocr.swift");
 
     // Check if binary exists and matches current version
     // We embed a version marker in the script to detect changes
-    let version_marker = "xiaoyun_ocr_v3_tiled";
-    let version_file = std::env::temp_dir().join("xiaoyun_ocr_version");
+    let version_marker = "openwiki_ocr_v3_tiled";
+    let version_file = std::env::temp_dir().join("openwiki_ocr_version");
     let current_version = std::fs::read_to_string(&version_file).unwrap_or_default();
 
     if binary_path.exists() && current_version.trim() == version_marker {

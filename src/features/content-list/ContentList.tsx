@@ -61,7 +61,6 @@ export function ContentList() {
     const unlisten = listen<{ id: string }>(
       "content:url-fetched",
       (_event) => {
-        console.log("URL content fetched, reloading content list");
         loadContent();
       }
     );
@@ -73,7 +72,6 @@ export function ContentList() {
     const unlisten = listen<string>(
       "content-summary-ready",
       (_event) => {
-        console.log("Summary ready, reloading content list");
         loadContent();
       }
     );
@@ -85,7 +83,6 @@ export function ContentList() {
     const unlisten = listen<{ id: string }>(
       "content:ocr-done",
       (_event) => {
-        console.log("OCR done, reloading content list");
         loadContent();
       }
     );

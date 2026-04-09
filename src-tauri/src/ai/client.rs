@@ -312,7 +312,7 @@ impl AiClient {
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://xiaoyun.app")
+            .header("HTTP-Referer", "https://openwiki.app")
             .header("X-Title", "Xiaoyun")
             .json(&request_body)
             .send()

@@ -5,7 +5,7 @@ use crate::storage::repository::Repository;
 use std::path::PathBuf;
 use tauri::State;
 
-/// Get the default export directory (~/Downloads/小云导出/).
+/// Get the default export directory (~/Downloads/OpenWiki导出/).
 fn default_export_dir() -> PathBuf {
     dirs::download_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Downloads"))
 }
@@ -151,12 +151,12 @@ pub async fn open_export_dir(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_data_folder() -> Result<(), String> {
-    let data_dir = dirs::data_dir().unwrap_or_default().join("com.xiaoyun.app");
+    let data_dir = dirs::data_dir().unwrap_or_default().join("com.openwiki.app");
 
     // Use "open -R" to reveal in Finder, targeting the db file.
     // macOS treats ".app" directories as application bundles,
-    // so "open com.xiaoyun.app/" fails. Revealing a file inside works.
-    let target = data_dir.join("xiaoyun.db");
+    // so "open com.openwiki.app/" fails. Revealing a file inside works.
+    let target = data_dir.join("openwiki.db");
     let reveal_target = if target.exists() { target } else { data_dir };
 
     std::process::Command::new("open")
@@ -185,8 +185,8 @@ pub async fn get_storage_info(state: State<'_, AppState>) -> Result<serde_json::
     // Get database file size
     let db_path = dirs::data_dir()
         .unwrap_or_default()
-        .join("com.xiaoyun.app")
-        .join("xiaoyun.db");
+        .join("com.openwiki.app")
+        .join("openwiki.db");
     let disk_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
     let disk_mb = disk_bytes as f64 / (1024.0 * 1024.0);
 

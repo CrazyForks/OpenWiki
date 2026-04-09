@@ -8,7 +8,7 @@ use std::time::Instant;
 use tauri::{Emitter, State};
 
 /// The application data directory name for storing captured images.
-const APP_DATA_DIR: &str = "com.xiaoyun.app";
+const APP_DATA_DIR: &str = "com.openwiki.app";
 const CAPTURES_SUBDIR: &str = "captures";
 const THUMBNAILS_SUBDIR: &str = "thumbnails";
 const THUMBNAIL_WIDTH: u32 = 200;
@@ -963,7 +963,7 @@ fn hide_bubble_window(app: &tauri::AppHandle) {
 /// Debug logging command — writes to a local file so we can see what happens at runtime.
 #[tauri::command]
 pub fn debug_log(message: String) {
-    let path = std::env::temp_dir().join("xiaoyun_debug.log");
+    let path = std::env::temp_dir().join("openwiki_debug.log");
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)

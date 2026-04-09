@@ -715,7 +715,7 @@ pub async fn call_analysis_api(
 
             if matches!(provider, AnalysisProvider::OpenRouter) {
                 req = req
-                    .header("HTTP-Referer", "https://xiaoyun.app")
+                    .header("HTTP-Referer", "https://openwiki.app")
                     .header("X-Title", "Xiaoyun");
             }
 
