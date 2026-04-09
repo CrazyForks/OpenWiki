@@ -142,9 +142,23 @@ listen<{ language: string }>('language-changed', (event) => {
 // In SettingsView.tsx — rendering provider labels
 const providerLabel = t(`settings:provider.${provider}`, { defaultValue: PROVIDER_LABELS[provider] });
 
-// Model groups
+// Model groups — use a lookup map for stable key derivation
+const GROUP_KEY_MAP: Record<string, string> = {
+  '免费推荐': 'free.recommended',
+  '更多免费': 'more.free',
+  '智谱': 'zhipu',
+  'Anthropic': 'anthropic',
+  'OpenAI': 'openai',
+  'Google': 'google',
+  'DeepSeek': 'deepseek',
+  'xAI': 'xai',
+  'Qwen': 'qwen',
+  'Meta': 'meta',
+  'Mistral': 'mistral',
+};
+
 const groupLabel = model.group
-  ? t(`settings:model.group.${model.group.replace(/[^a-zA-Z]/g, '').toLowerCase()}`, { defaultValue: model.group })
+  ? t(`settings:model.group.${GROUP_KEY_MAP[model.group] ?? model.group.toLowerCase()}`, { defaultValue: model.group })
   : undefined;
 ```
 
