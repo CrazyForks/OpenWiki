@@ -10,118 +10,122 @@
 </p>
 
 <p align="center">
-  复制任何内容 → 桌面弹出浮窗 → 选择收藏 → AI 自动整理成知识库<br>
-  <b>你决定留什么，AI 帮你理清楚。</b>
+  Copy anything → popup appears on desktop → choose to keep → AI organizes it into a knowledge base<br>
+  <b>You decide what to keep. AI makes sense of it.</b>
 </p>
 
 <p align="center">
-  隐私优先 — 所有数据存储在本地 SQLite 数据库。
+  Privacy first — all data stored in local SQLite database.
 </p>
 
-## 📸 截图
+<p align="center">
+  <a href="README.zh-CN.md">中文文档</a>
+</p>
 
-| 内容捕获 | 知识库 |
+## Screenshots
+
+| Content Capture | Knowledge Base |
 |:---:|:---:|
-| ![内容](docs/screenshots/content.png) | ![知识库](docs/screenshots/wiki.png) |
+| ![Content](docs/screenshots/content.png) | ![Wiki](docs/screenshots/wiki.png) |
 
-| 知识图谱 | 深度洞察 |
+| Knowledge Graph | Deep Insights |
 |:---:|:---:|
-| ![图谱](docs/screenshots/graph.png) | ![洞察](docs/screenshots/insights.png) |
+| ![Graph](docs/screenshots/graph.png) | ![Insights](docs/screenshots/insights.png) |
 
-## 核心功能
+## Features
 
-### 📋 捕获浮窗
-- 复制内容时桌面弹出浮窗（默认 10 秒后消失）
-- **只有你主动选择收藏的内容才会保存**，不会偷偷囤积
-- 支持文本、图片、URL，自动识别来源应用
-- 支持抓取微信公众号、X/Twitter 等 URL 的正文内容
-- `⌘⇧C` 全局快捷键可随时手动呼出捕获窗口
+### 📋 Capture Popup
+- A popup appears on your desktop when you copy something (auto-dismisses after 10 seconds)
+- **Only content you actively choose to keep gets saved** — no silent hoarding
+- Supports text, images, and URLs with automatic source app detection
+- Fetches full article content from WeChat, X/Twitter, and other URLs
+- `⌘⇧C` global shortcut to manually trigger the capture window
 
-### 📂 内容管理
-- 按类型（文本 / 图片 / 链接）和时间范围过滤
-- 全局搜索，跨内容和知识库同时检索
-- 日历时间线视图，按天浏览历史
-- 一键导出为 Markdown 文件
+### 📂 Content Management
+- Filter by type (text / image / link) and time range
+- Global search across content and knowledge base
+- Calendar timeline view — browse history by day
+- One-click export to Markdown
 
-### 🧠 AI 知识库
-- AI 自动将捕获内容编译为 Wiki 页面（概念、实体、主题）
-- 知识图谱可视化，看见概念之间的关联
-- **Ask 侧栏** — 向你的知识库提问，AI 基于你的内容回答
-- 自动检测孤立页面、断裂链接等结构问题
+### 🧠 AI Knowledge Base
+- AI automatically compiles captured content into Wiki pages (concepts, entities, topics)
+- Knowledge graph visualization — see how ideas connect
+- **Ask sidebar** — ask questions about your knowledge base, AI answers based on your content
+- Auto-detect orphaned pages, broken links, and structural issues
 
-### 📊 洞察报告
-- 一键生成 AI 周报，汇总本周捕获内容
-- **注意力分析** — 7 维度洞察你的信息习惯：
-    - 一瞥总览 / 潜意识 / 遗忘墓地 / 盲区 / 热点 / 热力图 / 行动建议
-- 对报告内容点赞或忽略，AI 学习你的偏好
+### 📊 Insight Reports
+- One-click AI weekly report summarizing captured content
+- **Attention analysis** — 7-dimension insights into your information habits:
+    - At a Glance / Subconscious / Graveyard / Blind Spots / Hot Topics / Heatmap / Action Items
+- Like or dismiss report items — AI learns your preferences
 
-### ⚙️ AI 提供商
-- 支持 **Anthropic (Claude)** / **OpenAI** / **Google Gemini**
-- API Key 或 OAuth 登录，两种接入方式
-- 可为每个提供商选择不同模型
+### ⚙️ AI Providers
+- Supports **Anthropic (Claude)** / **OpenAI** / **Google Gemini**
+- API Key or OAuth login — two ways to connect
+- Choose different models for each provider
 
-### 🖥 桌面体验
-- 系统托盘常驻，关闭窗口不退出
-- 全局快捷键 `⌘⇧Y` 唤起主窗口
-- 深色 / 浅色 / 跟随系统主题
-- MCP 协议集成，可连接 Claude Desktop
+### 🖥 Desktop Experience
+- System tray — closing the window keeps the app running
+- `⌘⇧Y` global shortcut to show the main window
+- Dark / Light / System theme
+- MCP protocol integration — connect to Claude Desktop
 
-## 下载安装
+## Download
 
-- macOS (Apple Silicon): 下载下方的 `OpenWiki_X.Y.Z_aarch64.dmg`
-- macOS (Intel): 下载下方的 `OpenWiki_X.Y.Z_x64.dmg`
+- macOS (Apple Silicon): download `OpenWiki_X.Y.Z_aarch64.dmg`
+- macOS (Intel): download `OpenWiki_X.Y.Z_x64.dmg`
 
-👉 [前往 Release 页面下载](https://github.com/kdsz001/OpenWiki/releases)
+👉 [Go to Releases](https://github.com/kdsz001/OpenWiki/releases)
 
-### ⚠️ 首次打开指南（重要）
+### ⚠️ First Launch Guide (Important)
 
-由于应用未经 Apple 签名，macOS 会拦截。请按以下步骤操作：
+The app is not signed with an Apple Developer certificate, so macOS will block it. Follow these steps:
 
-1. 打开 `.dmg`，将 OpenWiki 拖入「应用程序」文件夹
-2. **打开终端，执行 `xattr -cr /Applications/OpenWiki.app` ，允许应用运行**
-3. 运行应用，在弹出的授权窗口点击“允许”
-4. 在应用的“设置”->“AI”中配置 AI 提供商信息
+1. Open the `.dmg` and drag OpenWiki into the Applications folder
+2. **Open Terminal and run `xattr -cr /Applications/OpenWiki.app`** to allow the app to run
+3. Launch the app and click "Allow" in the authorization prompt
+4. Go to Settings → AI to configure your AI provider
 
-### 已知的外部依赖
+### Optional Dependencies
 
-以下功能需要额外安装工具，不影响其他功能使用：
+These features require additional tools. Other features work without them:
 
-| 功能 | 需要安装 | 安装方式 |
+| Feature | Requires | Install |
 |---|---|---|
-| YouTube 字幕抓取 | yt-dlp + Node.js | `pip3 install yt-dlp` + [nodejs.org](https://nodejs.org) |
+| YouTube subtitle extraction | yt-dlp + Node.js | `pip3 install yt-dlp` + [nodejs.org](https://nodejs.org) |
 
-## 开发指南
+## Development
 
-### 前置要求
+### Prerequisites
 - Node.js 18+
-- Rust (最新 stable)
+- Rust (latest stable)
 - macOS
-- Xcode Command Line Tools （终端运行 `xcode-select --install`）
+- Xcode Command Line Tools (`xcode-select --install`)
 
-### 开始
+### Getting Started
 
 ```bash
-# 克隆仓库
+# Clone the repo
 git clone https://github.com/kdsz001/OpenWiki.git
 cd OpenWiki
 
-# 安装依赖
+# Install dependencies
 npm install
 
-# 开发模式
+# Development mode
 npm run tauri dev
 
-# 构建应用
+# Build the app
 npm run tauri build
 ```
 
-## 参与贡献
+## Contributing
 
-欢迎贡献！请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发流程和规范。
+Contributions welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and guidelines.
 
-## 致谢
+## Acknowledgments
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube 字幕提取
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube subtitle extraction
 
 ## License
 
