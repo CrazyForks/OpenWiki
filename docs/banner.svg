@@ -37,19 +37,13 @@
   <circle cx="1120" cy="195" r="3" fill="#A8A29E" opacity="0.20"/>
   <circle cx="1140" cy="140" r="3" fill="#A8A29E" opacity="0.15"/>
 
-  <!-- === Centered content === -->
-  <!-- "Open" (dark) + "Wiki" (orange) — large, centered, no logo circle -->
-  <!-- Arial 56px: "Open" ~123px, "Wiki" ~107px, total ~230px, gap 6px = ~236px -->
-  <!-- Center: 600 - 118 = 482 start -->
-  <text x="482" y="100" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="56" fill="#1C1917">Open</text>
-  <text x="624" y="100" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="56" fill="#F97316">Wiki</text>
+  <!-- OpenWiki title — 72px, all English -->
+  <text x="427" y="120" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="72" fill="#1C1917">Open</text>
+  <text x="610" y="120" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="72" fill="#F97316">Wiki</text>
 
-  <!-- Tagline -->
-  <text x="600" y="145" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="16" fill="#78716C">自动捕获 · 智能整理 · 深度洞察</text>
-
-  <!-- Divider -->
-  <line x1="500" y1="167" x2="700" y2="167" stroke="#F97316" stroke-opacity="0.2" stroke-width="1"/>
+  <!-- Subtitle — English only -->
+  <text x="600" y="165" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="400" font-size="15" fill="#A8A29E" letter-spacing="3">CAPTURE · ORGANIZE · INSIGHT</text>
 
   <!-- Tech stack -->
-  <text x="600" y="195" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="400" font-size="13" fill="#A8A29E" letter-spacing="2">TAURI 2 · REACT · RUST · SQLITE · PRIVACY FIRST</text>
+  <text x="600" y="210" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="400" font-size="12" fill="#D6D3D1" letter-spacing="2">TAURI 2 · REACT · RUST · SQLITE · PRIVACY FIRST</text>
 </svg>
