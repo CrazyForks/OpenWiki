@@ -15,7 +15,7 @@ Thank you for your interest in contributing to OpenWiki! This document will help
 
 ```bash
 # Clone the repository
-git clone https://github.com/kdsz001/xiaoyun.git
+git clone https://github.com/kdsz001/OpenWiki.git
 cd xiaoyun
 
 # Install frontend dependencies
@@ -58,7 +58,7 @@ npm run build
 
 ### Reporting Bugs
 
-- Open a [GitHub Issue](https://github.com/kdsz001/xiaoyun/issues)
+- Open a [GitHub Issue](https://github.com/kdsz001/OpenWiki/issues)
 - Include steps to reproduce, expected vs actual behavior
 - Include your macOS version and app version
 

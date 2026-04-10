@@ -18,7 +18,7 @@
 
 ## GitHub
 
-- Repository: https://github.com/kdsz001/xiaoyun
+- Repository: https://github.com/kdsz001/OpenWiki
 - When user says "存一下" or "保存进度": commit + push to GitHub
 - Write clear commit messages in conventional format (feat/fix/refactor)
 

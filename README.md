@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kdsz001/xiaoyun/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-F97316?style=flat-square" alt="License"></a>
-  <a href="https://github.com/kdsz001/xiaoyun/releases"><img src="https://img.shields.io/github/v/release/kdsz001/xiaoyun?style=flat-square&color=F97316" alt="Release"></a>
+  <a href="https://github.com/kdsz001/OpenWiki/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-F97316?style=flat-square" alt="License"></a>
+  <a href="https://github.com/kdsz001/OpenWiki/releases"><img src="https://img.shields.io/github/v/release/kdsz001/OpenWiki?style=flat-square&color=F97316" alt="Release"></a>
   <img src="https://img.shields.io/badge/platform-macOS-F97316?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/PRs-welcome-F97316?style=flat-square" alt="PRs Welcome">
 </p>
@@ -82,7 +82,7 @@
 
 🍏 macOS (Apple Silicon): 下载下方的 `OpenWiki_0.1.0_aarch64.dmg`
 
-👉 [前往 Release 页面下载](https://github.com/kdsz001/xiaoyun/releases)
+👉 [前往 Release 页面下载](https://github.com/kdsz001/OpenWiki/releases)
 
 ### ⚠️ 首次打开指南（重要）
 
@@ -113,7 +113,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/kdsz001/xiaoyun.git
+git clone https://github.com/kdsz001/OpenWiki.git
 cd xiaoyun
 
 # 安装依赖
