@@ -98,6 +98,16 @@ pub fn run() {
             // --- System Tray ---
             setup_tray(app)?;
 
+            // --- Cleanup stale compile locks from interrupted sessions ---
+            {
+                let state: tauri::State<'_, AppState> = app.state();
+                let repo = crate::storage::repository::Repository::new(state.db.clone());
+                match repo.cleanup_stale_compile_locks() {
+                    Ok(n) if n > 0 => log::info!("Cleaned {} stale compile locks", n),
+                    _ => {}
+                }
+            }
+
             // --- Start capture detector (auto-saves to database) ---
             eprintln!("[openwiki] Starting capture detector...");
             detector.start(app.handle().clone());
