@@ -457,33 +457,48 @@ impl UrlReader {
 
         let title = extract_youtube_title(&html);
 
-        // Step 2: Use yt-dlp to download caption XML (YouTube's timedtext API
-        // no longer works with direct requests; yt-dlp uses the Android VR
-        // Player API which still returns valid caption URLs)
-        let tmp_dir = std::env::temp_dir().join(format!("openwiki_yt_{}", video_id));
+        // Step 2: Use yt-dlp to download captions (supports VTT and srv1 formats)
+        // Unique tmp dir per invocation to avoid concurrent collisions
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "openwiki_yt_{}_{}", video_id, std::process::id()
+        ));
         let _ = std::fs::create_dir_all(&tmp_dir);
         let out_template = tmp_dir.join("sub");
-
-        // Try Chinese first, fallback to English
-        let sub_langs = "zh-Hans,zh,zh-CN,zh-Hant,en";
 
         // Resolve yt-dlp binary path — macOS GUI apps have a minimal PATH,
         // so we search common install locations explicitly (concrete paths first).
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        let candidates = vec![
+        let yt_dlp_candidates = vec![
             format!("{}/anaconda3/bin/yt-dlp", home),
             format!("{}/miniconda3/bin/yt-dlp", home),
             format!("{}/.local/bin/yt-dlp", home),
             "/usr/local/bin/yt-dlp".to_string(),
             "/opt/homebrew/bin/yt-dlp".to_string(),
         ];
-        let yt_dlp_bin = candidates
+        let yt_dlp_bin = yt_dlp_candidates
             .iter()
             .find(|p| std::path::Path::new(p).exists())
             .cloned()
-            .unwrap_or_else(|| "yt-dlp".to_string()); // bare name as last resort
+            .unwrap_or_else(|| "yt-dlp".to_string());
 
         log::info!("[YouTube] Using yt-dlp binary: {}", yt_dlp_bin);
+
+        // Resolve node binary path — needed for yt-dlp JS runtime (YouTube
+        // now requires JS challenge solving; without it, bot detection blocks).
+        let node_candidates = vec![
+            "/usr/local/bin/node".to_string(),
+            "/opt/homebrew/bin/node".to_string(),
+            format!("{}/.nvm/current/bin/node", home),
+            format!("{}/.local/bin/node", home),
+        ];
+        let node_bin = node_candidates
+            .iter()
+            .find(|p| std::path::Path::new(p).exists())
+            .cloned()
+            .unwrap_or_else(|| "node".to_string()); // bare name as last resort
+
+        let js_runtime_arg = format!("node:{}", node_bin);
+        log::info!("[YouTube] Using node binary: {}", node_bin);
 
         // Try one language at a time — yt-dlp aborts ALL downloads on first 429
         let lang_attempts = vec!["en", "zh-Hans", "zh", "zh-Hant"];
@@ -498,38 +513,62 @@ impl UrlReader {
 
             log::info!("[YouTube] attempt {} with langs: {}", attempt + 1, langs);
 
-            let output = tokio::process::Command::new(&yt_dlp_bin)
+            let yt_dlp_future = tokio::process::Command::new(&yt_dlp_bin)
                 .args(&[
                     "--write-auto-sub",
                     "--sub-lang",
                     langs,
                     "--skip-download",
                     "--sub-format",
-                    "srv1",
+                    "vtt/srv1",
+                    "--js-runtimes",
+                    &js_runtime_arg,
+                    "--remote-components",
+                    "ejs:github",
                     "-o",
                     out_path,
                     &watch_url,
                 ])
-                .output()
-                .await
-                .map_err(|e| {
+                .output();
+
+            // 60s timeout to prevent yt-dlp from hanging (e.g. EJS download stall)
+            let output = match tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                yt_dlp_future,
+            )
+            .await
+            {
+                Ok(result) => result.map_err(|e| {
                     format!(
                         "yt-dlp not found or failed: {}. Please install: pip3 install yt-dlp",
                         e
                     )
-                })?;
+                })?,
+                Err(_) => {
+                    log::warn!("[YouTube] yt-dlp timed out after 60s");
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
+                    return Err(
+                        "YouTube 字幕提取超时（60秒），请稍后再试".to_string()
+                    );
+                }
+            };
 
             last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if !output.status.success() {
                 log::warn!("[YouTube] yt-dlp exit non-zero: {}", last_stderr);
             }
 
-            // Check if subtitle file was downloaded
+            // Check if subtitle file was downloaded (support both .vtt and .srv1)
             let has_sub = std::fs::read_dir(&tmp_dir)
                 .map(|entries| {
                     entries
                         .filter_map(|e| e.ok())
-                        .any(|e| e.path().extension().map(|x| x == "srv1").unwrap_or(false))
+                        .any(|e| {
+                            e.path()
+                                .extension()
+                                .map(|x| x == "vtt" || x == "srv1")
+                                .unwrap_or(false)
+                        })
                 })
                 .unwrap_or(false);
 
@@ -548,24 +587,70 @@ impl UrlReader {
             }
         }
 
-        // Step 3: Find and read the downloaded subtitle file
-        let xml = std::fs::read_dir(&tmp_dir)
+        // Step 3: Find and read the downloaded subtitle file (prefer .vtt over .srv1)
+        let sub_entry = std::fs::read_dir(&tmp_dir)
             .map_err(|e| format!("Cannot read tmp dir: {}", e))?
             .filter_map(|entry| entry.ok())
-            .find(|entry| {
+            .filter(|entry| {
                 entry
                     .path()
                     .extension()
-                    .map(|e| e == "srv1")
+                    .map(|e| e == "vtt" || e == "srv1")
                     .unwrap_or(false)
             })
-            .and_then(|entry| std::fs::read_to_string(entry.path()).ok())
-            .unwrap_or_default();
+            .min_by_key(|entry| {
+                // Prefer .vtt (0) over .srv1 (1)
+                if entry
+                    .path()
+                    .extension()
+                    .map(|e| e == "vtt")
+                    .unwrap_or(false)
+                {
+                    0
+                } else {
+                    1
+                }
+            });
+
+        let (sub_content, sub_format) = match sub_entry {
+            Some(entry) => {
+                let path = entry.path();
+                let fmt = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                log::info!("[YouTube] Found subtitle file: {} (format: {})", path.display(), fmt);
+                (content, fmt)
+            }
+            None => (String::new(), String::new()),
+        };
 
         // Clean up temp files
         let _ = std::fs::remove_dir_all(&tmp_dir);
 
-        if xml.is_empty() {
+        // Error classification — distinguish "blocked" from "genuinely no subtitles"
+        if sub_content.is_empty() {
+            if last_stderr.contains("Sign in to confirm")
+                || last_stderr.contains("sign in")
+            {
+                return Err(
+                    "YouTube 需要登录验证，无法提取字幕。请稍后再试".to_string(),
+                );
+            }
+            if last_stderr.contains("No supported JavaScript runtime") {
+                return Err(
+                    "缺少 JavaScript 运行时，YouTube 字幕提取需要 Node.js。请安装: https://nodejs.org".to_string(),
+                );
+            }
+            if last_stderr.contains("429") || last_stderr.contains("Too Many Requests") {
+                return Err(
+                    "YouTube 请求被限流（429），请稍后再试".to_string(),
+                );
+            }
+
+            // No blocking error — genuinely no subtitles, use title/description fallback
             let desc = extract_youtube_description(&html).unwrap_or_default();
             let content = if let Some(ref t) = title {
                 format!(
@@ -590,9 +675,7 @@ impl UrlReader {
             });
         }
 
-        // Step 4: Parse XML → structured snippets with timestamps
-        let re_text =
-            Regex::new(r#"<text\s+start="([^"]+)"\s+dur="([^"]+)"[^>]*>(.*?)</text>"#).unwrap();
+        // Step 4: Parse subtitles → structured snippets with timestamps
         let re_html_tags = Regex::new(r"<[^>]*>").unwrap();
 
         struct Snippet {
@@ -602,29 +685,134 @@ impl UrlReader {
         }
 
         let mut snippets: Vec<Snippet> = Vec::new();
-        for cap in re_text.captures_iter(&xml) {
-            let start: f64 = cap
-                .get(1)
-                .and_then(|m| m.as_str().parse().ok())
-                .unwrap_or(0.0);
-            let dur: f64 = cap
-                .get(2)
-                .and_then(|m| m.as_str().parse().ok())
-                .unwrap_or(0.0);
-            let raw_text = cap.get(3).map(|m| m.as_str()).unwrap_or("");
-            let decoded = html_decode(raw_text).replace('\n', " ");
-            let clean = re_html_tags.replace_all(&decoded, "").trim().to_string();
-            if !clean.is_empty() {
-                snippets.push(Snippet {
-                    start,
-                    dur,
-                    text: clean,
-                });
+
+        if sub_format == "srv1" {
+            // Parse XML (srv1) format: <text start="..." dur="...">...</text>
+            let re_text = Regex::new(
+                r#"<text\s+start="([^"]+)"\s+dur="([^"]+)"[^>]*>(.*?)</text>"#,
+            )
+            .unwrap();
+            for cap in re_text.captures_iter(&sub_content) {
+                let start: f64 = cap
+                    .get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0.0);
+                let dur: f64 = cap
+                    .get(2)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0.0);
+                let raw_text = cap.get(3).map(|m| m.as_str()).unwrap_or("");
+                let decoded = html_decode(raw_text).replace('\n', " ");
+                let clean = re_html_tags.replace_all(&decoded, "").trim().to_string();
+                if !clean.is_empty() {
+                    snippets.push(Snippet {
+                        start,
+                        dur,
+                        text: clean,
+                    });
+                }
+            }
+        } else {
+            // Parse VTT (WebVTT) format:
+            //   WEBVTT
+            //   Kind: captions
+            //
+            //   00:00:01.000 --> 00:00:04.500
+            //   subtitle text (may span multiple lines)
+            //   <i>may contain HTML tags</i>
+            let re_ts = Regex::new(
+                r"(\d{1,2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})\.(\d{3})",
+            )
+            .unwrap();
+
+            let mut cur_start: Option<f64> = None;
+            let mut cur_end: Option<f64> = None;
+            let mut cur_texts: Vec<String> = Vec::new();
+            let mut in_header = true;
+            let mut in_skip_block = false;
+
+            for line in sub_content.lines() {
+                let trimmed = line.trim();
+
+                // Skip WEBVTT header block (everything before first blank line)
+                if in_header {
+                    if trimmed.is_empty() {
+                        in_header = false;
+                    }
+                    continue;
+                }
+
+                // Skip NOTE / STYLE / REGION blocks (until next blank line)
+                if in_skip_block {
+                    if trimmed.is_empty() {
+                        in_skip_block = false;
+                    }
+                    continue;
+                }
+                if trimmed.starts_with("NOTE")
+                    || trimmed.starts_with("STYLE")
+                    || trimmed.starts_with("REGION")
+                {
+                    in_skip_block = true;
+                    continue;
+                }
+
+                if let Some(cap) = re_ts.captures(trimmed) {
+                    // Flush previous cue
+                    if let (Some(start), Some(end)) = (cur_start, cur_end) {
+                        let text = cur_texts.join(" ");
+                        let clean =
+                            re_html_tags.replace_all(&text, "").trim().to_string();
+                        if !clean.is_empty() {
+                            snippets.push(Snippet {
+                                start,
+                                dur: (end - start).max(0.0),
+                                text: clean,
+                            });
+                        }
+                    }
+
+                    // Parse new timestamps: HH:MM:SS.mmm --> HH:MM:SS.mmm
+                    let h1: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let m1: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let s1: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let ms1: f64 = cap.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let h2: f64 = cap.get(5).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let m2: f64 = cap.get(6).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let s2: f64 = cap.get(7).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let ms2: f64 = cap.get(8).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+
+                    cur_start = Some(h1 * 3600.0 + m1 * 60.0 + s1 + ms1 / 1000.0);
+                    cur_end = Some(h2 * 3600.0 + m2 * 60.0 + s2 + ms2 / 1000.0);
+                    cur_texts.clear();
+                } else if trimmed.is_empty() {
+                    // Blank line = cue boundary (flushed on next timestamp)
+                } else {
+                    // Subtitle text line
+                    let decoded = html_decode(trimmed).replace('\n', " ");
+                    cur_texts.push(decoded);
+                }
+            }
+
+            // Flush last cue
+            if let (Some(start), Some(end)) = (cur_start, cur_end) {
+                let text = cur_texts.join(" ");
+                let clean = re_html_tags.replace_all(&text, "").trim().to_string();
+                if !clean.is_empty() {
+                    snippets.push(Snippet {
+                        start,
+                        dur: (end - start).max(0.0),
+                        text: clean,
+                    });
+                }
             }
         }
 
         if snippets.is_empty() {
-            return Err("YouTube: caption XML parsed but no text found".to_string());
+            return Err(format!(
+                "YouTube: {} 字幕已下载但解析未提取到文本",
+                sub_format
+            ));
         }
 
         // Step 5: Extract chapters from video description
