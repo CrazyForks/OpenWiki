@@ -39,5 +39,9 @@ dist-ssr
 # to keep build artifacts outside iCloud-synced Documents)
 src-tauri/.cargo/
 
+# Bundled yt-dlp binary — downloaded automatically by build.rs from GitHub
+# releases on first build. Not committed (36MB binary).
+src-tauri/resources/yt-dlp_macos
+
 # Internal planning docs (not for public repo)
 docs/superpowers/

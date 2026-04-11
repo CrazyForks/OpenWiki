@@ -1,12 +1,94 @@
+/// Version of yt-dlp to download. Pinned intentionally — bump this when
+/// you want to upgrade (after verifying the new release works). Automatic
+/// "always fetch latest" would silently break users when yt-dlp ships a
+/// change that breaks our invocation.
+#[cfg(target_os = "macos")]
+const YT_DLP_VERSION: &str = "2026.03.17";
+
+/// Download `yt-dlp_macos` (universal binary) from GitHub releases into
+/// `resources/` so it can be bundled into the app via tauri.conf.json.
+///
+/// Idempotent: if the binary already exists, we leave it alone (avoids
+/// network access on every rebuild). Delete the file to force a refresh.
+#[cfg(target_os = "macos")]
+fn ensure_yt_dlp_bundled(manifest_dir: &std::path::Path) {
+    let yt_dlp_path = manifest_dir.join("resources/yt-dlp_macos");
+
+    if yt_dlp_path.exists() {
+        return;
+    }
+
+    let url = format!(
+        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
+        YT_DLP_VERSION
+    );
+
+    println!(
+        "cargo:warning=Downloading yt-dlp {} from {} ...",
+        YT_DLP_VERSION, url
+    );
+
+    let status = std::process::Command::new("curl")
+        .args([
+            "-L",
+            "--fail",
+            "--retry",
+            "3",
+            "-o",
+            yt_dlp_path.to_str().unwrap(),
+            &url,
+        ])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {}
+        _ => panic!(
+            "Failed to download yt-dlp from {}. Check your network, or manually download the file to {} and rerun the build.",
+            url,
+            yt_dlp_path.display()
+        ),
+    }
+
+    // Make executable
+    let _ = std::process::Command::new("chmod")
+        .args(["+x", yt_dlp_path.to_str().unwrap()])
+        .status();
+
+    // Ad-hoc codesign so macOS Gatekeeper lets the app launch this binary
+    // from inside the bundle. The app itself is ad-hoc signed the same way.
+    let sign_status = std::process::Command::new("codesign")
+        .args(["--sign", "-", "--force", yt_dlp_path.to_str().unwrap()])
+        .status();
+    match sign_status {
+        Ok(s) if s.success() => {
+            println!(
+                "cargo:warning=Downloaded and ad-hoc signed yt-dlp -> {}",
+                yt_dlp_path.display()
+            );
+        }
+        _ => panic!(
+            "Failed to ad-hoc codesign {}. Install the macOS toolchain (it ships with codesign) or sign manually.",
+            yt_dlp_path.display()
+        ),
+    }
+}
+
 fn main() {
     // Pre-compile the macOS OCR Swift helper so end users don't need swiftc
     // (i.e. don't need Xcode Command Line Tools) to use OCR at runtime.
-    // The resulting binary is bundled as a Tauri resource — see tauri.conf.json.
+    // Also download `yt-dlp_macos` on first build so end users don't need
+    // to install yt-dlp via anaconda/brew/pip first.
+    // Both binaries are bundled as Tauri resources — see tauri.conf.json.
     #[cfg(target_os = "macos")]
     {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let swift_src = std::path::Path::new(&manifest_dir).join("resources/openwiki_ocr.swift");
-        let swift_bin = std::path::Path::new(&manifest_dir).join("resources/openwiki_ocr_bin");
+        let manifest_dir = std::path::PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").unwrap(),
+        );
+
+        ensure_yt_dlp_bundled(&manifest_dir);
+
+        let swift_src = manifest_dir.join("resources/openwiki_ocr.swift");
+        let swift_bin = manifest_dir.join("resources/openwiki_ocr_bin");
 
         println!("cargo:rerun-if-changed={}", swift_src.display());
 

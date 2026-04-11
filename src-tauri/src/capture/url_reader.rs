@@ -1,4 +1,6 @@
 use reqwest::Client;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 const JINA_READER_BASE: &str = "https://r.jina.ai/";
@@ -7,6 +9,17 @@ const FETCH_TIMEOUT_SECS: u64 = 15;
 const MIN_CONTENT_LENGTH: usize = 20;
 
 const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/// Path to the bundled `yt-dlp_macos` binary, resolved at app startup from
+/// the Tauri resource directory. Same pattern as `capture::ocr`. When set,
+/// `fetch_youtube` prefers this over searching the user's PATH, so new users
+/// don't need to install yt-dlp via anaconda/brew/pip first.
+static YT_DLP_BINARY_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Register the bundled yt-dlp binary path. Called from the Tauri setup hook.
+pub fn init_yt_dlp_binary_path(path: PathBuf) {
+    let _ = YT_DLP_BINARY_PATH.set(path);
+}
 
 pub struct UrlReadResult {
     pub content: String,
@@ -471,26 +484,70 @@ impl UrlReader {
         let _ = std::fs::create_dir_all(&tmp_dir);
         let out_template = tmp_dir.join("sub");
 
-        // Resolve yt-dlp binary path — macOS GUI apps have a minimal PATH,
-        // so we search common install locations explicitly (concrete paths first).
+        // Resolve yt-dlp binary path.
+        //
+        // Priority order:
+        //   1. The bundled `yt-dlp_macos` shipped inside the app bundle.
+        //      This is the default path for end users who never installed
+        //      yt-dlp themselves. Registered at startup via
+        //      `init_yt_dlp_binary_path` (see lib.rs setup hook).
+        //   2. Dev-mode source tree fallback. In `tauri dev` the call to
+        //      `app.path().resource_dir()` returns Err, so the OnceLock
+        //      in priority 1 is never populated. We pin to the manifest
+        //      dir captured at compile time so dev runs still hit the
+        //      bundled binary instead of silently leaking to the user's
+        //      own yt-dlp. Debug-only — never compiled into release.
+        //   3. Common user install locations (anaconda/miniconda/brew/pipx)
+        //      — kept as fallback so developers who prefer their own
+        //      installation still work.
+        //   4. Bare "yt-dlp" — last-resort PATH lookup.
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        let yt_dlp_candidates = vec![
-            format!("{}/anaconda3/bin/yt-dlp", home),
-            format!("{}/miniconda3/bin/yt-dlp", home),
-            format!("{}/.local/bin/yt-dlp", home),
-            "/usr/local/bin/yt-dlp".to_string(),
-            "/opt/homebrew/bin/yt-dlp".to_string(),
-        ];
-        let yt_dlp_bin = yt_dlp_candidates
-            .iter()
-            .find(|p| std::path::Path::new(p).exists())
-            .cloned()
-            .unwrap_or_else(|| "yt-dlp".to_string());
+        let bundled_yt_dlp = YT_DLP_BINARY_PATH
+            .get()
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().into_owned());
+
+        #[cfg(debug_assertions)]
+        let dev_mode_bundled = || {
+            let src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/yt-dlp_macos");
+            if src_path.exists() {
+                Some(src_path.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        };
+        #[cfg(not(debug_assertions))]
+        let dev_mode_bundled = || -> Option<String> { None };
+
+        let yt_dlp_bin = bundled_yt_dlp
+            .or_else(dev_mode_bundled)
+            .unwrap_or_else(|| {
+                let yt_dlp_candidates = vec![
+                    format!("{}/anaconda3/bin/yt-dlp", home),
+                    format!("{}/miniconda3/bin/yt-dlp", home),
+                    format!("{}/.local/bin/yt-dlp", home),
+                    "/usr/local/bin/yt-dlp".to_string(),
+                    "/opt/homebrew/bin/yt-dlp".to_string(),
+                ];
+                yt_dlp_candidates
+                    .iter()
+                    .find(|p| std::path::Path::new(p).exists())
+                    .cloned()
+                    .unwrap_or_else(|| "yt-dlp".to_string())
+            });
 
         log::info!("[YouTube] Using yt-dlp binary: {}", yt_dlp_bin);
 
-        // Resolve node binary path — needed for yt-dlp JS runtime (YouTube
-        // now requires JS challenge solving; without it, bot detection blocks).
+        // Resolve node binary path — yt-dlp uses it to execute YouTube's JS
+        // challenges (required for bot detection bypass on most videos).
+        //
+        // Unlike yt-dlp itself, we can NOT ship node inside the app bundle
+        // (the full macOS binary is ~90MB, too heavy). Instead we search
+        // common install locations; if none exists, we skip the
+        // `--js-runtimes` arg entirely and let yt-dlp pick its default
+        // JS interpreter. Some videos (heavy PO token gating) will still
+        // fail without node, but most will work.
         let node_candidates = vec![
             "/usr/local/bin/node".to_string(),
             "/opt/homebrew/bin/node".to_string(),
@@ -500,11 +557,15 @@ impl UrlReader {
         let node_bin = node_candidates
             .iter()
             .find(|p| std::path::Path::new(p).exists())
-            .cloned()
-            .unwrap_or_else(|| "node".to_string()); // bare name as last resort
+            .cloned();
 
-        let js_runtime_arg = format!("node:{}", node_bin);
-        log::info!("[YouTube] Using node binary: {}", node_bin);
+        let js_runtime_arg = node_bin.as_ref().map(|n| format!("node:{}", n));
+        match node_bin.as_ref() {
+            Some(n) => log::info!("[YouTube] Using node binary: {}", n),
+            None => log::info!(
+                "[YouTube] No node binary found — falling back to yt-dlp built-in JS interpreter"
+            ),
+        }
 
         // Try one language at a time — yt-dlp aborts ALL downloads on first 429
         let lang_attempts = vec!["en", "zh-Hans", "zh", "zh-Hant"];
@@ -519,23 +580,28 @@ impl UrlReader {
 
             log::info!("[YouTube] attempt {} with langs: {}", attempt + 1, langs);
 
-            let yt_dlp_future = tokio::process::Command::new(&yt_dlp_bin)
-                .args(&[
-                    "--write-auto-sub",
-                    "--sub-lang",
-                    langs,
-                    "--skip-download",
-                    "--sub-format",
-                    "vtt/srv1",
-                    "--js-runtimes",
-                    &js_runtime_arg,
-                    "--remote-components",
-                    "ejs:github",
-                    "-o",
-                    out_path,
-                    &watch_url,
-                ])
-                .output();
+            let mut cmd = tokio::process::Command::new(&yt_dlp_bin);
+            cmd.args(&[
+                "--write-auto-sub",
+                "--sub-lang",
+                langs,
+                "--skip-download",
+                "--sub-format",
+                "vtt/srv1",
+            ]);
+            // Only pin a JS runtime when we actually found `node` on disk.
+            // Without this, yt-dlp falls back to its own default search.
+            if let Some(ref runtime) = js_runtime_arg {
+                cmd.args(&["--js-runtimes", runtime]);
+            }
+            cmd.args(&[
+                "--remote-components",
+                "ejs:github",
+                "-o",
+                out_path,
+                &watch_url,
+            ]);
+            let yt_dlp_future = cmd.output();
 
             // 60s timeout to prevent yt-dlp from hanging (e.g. EJS download stall)
             let output = match tokio::time::timeout(

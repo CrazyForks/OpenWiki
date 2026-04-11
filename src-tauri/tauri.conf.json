@@ -61,7 +61,8 @@
     ],
     "resources": {
       "scripts/*": "scripts/",
-      "resources/openwiki_ocr_bin": "openwiki_ocr_bin"
+      "resources/openwiki_ocr_bin": "openwiki_ocr_bin",
+      "resources/yt-dlp_macos": "yt-dlp_macos"
     },
     "macOS": {
       "signingIdentity": "-",

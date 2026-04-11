@@ -66,10 +66,20 @@ pub fn run() {
             // --- Resolve bundled OCR helper binary ---
             // The Swift OCR helper is pre-compiled at build time and shipped
             // as a Tauri resource, so end users don't need Xcode Command Line Tools.
+            //
+            // --- Resolve bundled yt-dlp binary ---
+            // `yt-dlp_macos` is downloaded by build.rs and shipped as a Tauri
+            // resource, so end users don't need to install yt-dlp via
+            // anaconda/brew/pip first. Without this, YouTube captions would
+            // fail for anyone who hasn't manually installed yt-dlp.
             if let Ok(resource_dir) = app.path().resource_dir() {
                 let ocr_bin = resource_dir.join("openwiki_ocr_bin");
                 log::info!("[OCR] Registered bundled helper at {}", ocr_bin.display());
                 crate::capture::ocr::init_ocr_binary_path(ocr_bin);
+
+                let yt_dlp_bin = resource_dir.join("yt-dlp_macos");
+                log::info!("[YouTube] Registered bundled yt-dlp at {}", yt_dlp_bin.display());
+                crate::capture::url_reader::init_yt_dlp_binary_path(yt_dlp_bin);
             } else {
                 log::warn!("[OCR] Could not resolve resource_dir at startup");
             }
