@@ -22,6 +22,22 @@
 - When user says "存一下" or "保存进度": commit + push to GitHub
 - Write clear commit messages in conventional format (feat/fix/refactor)
 
+## Release workflow
+
+User is non-technical and doesn't maintain the `release-notes/` folder
+or run any release commands manually. When user says "发版", "发 release",
+"打 tag", "发个新版本", or similar, Claude owns the full release flow.
+**Read `release-notes/README.md` first** — it has the step-by-step
+checklist (pick version number, summarize commits into user-facing
+bullets, create `release-notes/vX.Y.Z.md` from TEMPLATE.md, bump the
+three version files, run `cargo check` to sync Cargo.lock, commit, tag,
+push, push tag). After pushing the tag, report back with the Actions
+URL so the user can watch the DMG build.
+
+The key rule: never paste raw commit messages into release notes.
+Rewrite everything into short user-facing sentences like "优化了 X" or
+"修复了 X", no technical details.
+
 ## Project Info
 
 - Tauri 2 desktop app (Rust + React/TypeScript)
