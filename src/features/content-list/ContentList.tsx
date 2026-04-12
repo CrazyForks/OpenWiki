@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { useContentStore } from "../../stores/contentStore";
-import { getAllContent } from "../../services/storageService";
+import { getAllContent, getStorageInfo } from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
 import { ContentCard } from "./ContentCard";
@@ -27,6 +27,7 @@ export function ContentList() {
   const clearHighlights = useContentStore((s) => s.clearHighlights);
   const captureEnabled = useSettingsStore((s) => s.captureEnabled);
   const sensitiveFilterEnabled = useSettingsStore((s) => s.sensitiveFilterEnabled);
+  const setStorageInfo = useSettingsStore((s) => s.setStorageInfo);
   const [filter, setFilter] = useState<FilterType>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
@@ -38,14 +39,22 @@ export function ContentList() {
   const loadContent = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await getAllContent(50, 0);
+      // The content tab has no pagination UI. Loading only the first 50 rows
+      // makes both the list and its counters look capped at 50, even though
+      // newer items continue to save correctly. Fetch the real total first,
+      // then load that many rows so the content tab reflects the full library.
+      const info = await getStorageInfo();
+      setStorageInfo(info.total_items, info.disk_usage_mb);
+      const data = info.total_items > 0
+        ? await getAllContent(info.total_items, 0)
+        : [];
       setContents(data);
     } catch (e) {
       console.error("Failed to load content:", e);
     } finally {
       setIsLoading(false);
     }
-  }, [setContents, setIsLoading]);
+  }, [setContents, setIsLoading, setStorageInfo]);
 
   useEffect(() => {
     loadContent();

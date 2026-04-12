@@ -1,11 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { CapturedContent } from "../types/content";
 
+export interface StorageInfo {
+  total_items: number;
+  disk_usage_mb: number;
+}
+
 export async function getAllContent(
   limit?: number,
   offset?: number
 ): Promise<CapturedContent[]> {
   return invoke("get_all_content", { limit, offset });
+}
+
+export async function getStorageInfo(): Promise<StorageInfo> {
+  return invoke("get_storage_info");
 }
 
 export async function deleteContent(id: string): Promise<void> {
