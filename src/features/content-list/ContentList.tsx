@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState, useMemo, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { useContentStore } from "../../stores/contentStore";
-import { getAllContent, getStorageInfo } from "../../services/storageService";
+import { getAllContent, getStorageInfo, getContentsByIds } from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
 import { ContentCard } from "./ContentCard";
@@ -18,9 +18,18 @@ const FILTER_TABS: { value: FilterType; labelKey: string; icon: string }[] = [
   { value: "url", labelKey: "filter.url", icon: "🔗" },
 ];
 
+const PAGE_SIZE = 50;
+
 export function ContentList() {
   const { t } = useTranslation("content");
   const { contents, isLoading, setContents, setIsLoading } = useContentStore();
+  const hasMore = useContentStore((s) => s.hasMore);
+  const totalCount = useContentStore((s) => s.totalCount);
+  const isLoadingMore = useContentStore((s) => s.isLoadingMore);
+  const setHasMore = useContentStore((s) => s.setHasMore);
+  const setTotalCount = useContentStore((s) => s.setTotalCount);
+  const setIsLoadingMore = useContentStore((s) => s.setIsLoadingMore);
+  const appendContents = useContentStore((s) => s.appendContents);
   const highlightedIds = useContentStore((s) => s.highlightedIds);
   const scrollToId = useContentStore((s) => s.scrollToId);
   const setScrollToId = useContentStore((s) => s.setScrollToId);
@@ -33,83 +42,108 @@ export function ContentList() {
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refs for scroll-to-item
+  // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const loadContent = useCallback(async () => {
+  // Load initial page (first 50 items)
+  const loadInitial = useCallback(async () => {
     setIsLoading(true);
     try {
-      // The content tab has no pagination UI. Loading only the first 50 rows
-      // makes both the list and its counters look capped at 50, even though
-      // newer items continue to save correctly. Fetch the real total first,
-      // then load that many rows so the content tab reflects the full library.
       const info = await getStorageInfo();
       setStorageInfo(info.total_items, info.disk_usage_mb);
-      const data = info.total_items > 0
-        ? await getAllContent(info.total_items, 0)
-        : [];
+      setTotalCount(info.total_items);
+      const data = await getAllContent(PAGE_SIZE, 0);
       setContents(data);
+      setHasMore(data.length < info.total_items);
     } catch (e) {
       console.error("Failed to load content:", e);
     } finally {
       setIsLoading(false);
     }
-  }, [setContents, setIsLoading, setStorageInfo]);
+  }, [setContents, setIsLoading, setStorageInfo, setTotalCount, setHasMore]);
+
+  // Load more items (append next batch)
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const offset = contents.length;
+      const data = await getAllContent(PAGE_SIZE, offset);
+      appendContents(data);
+      if (data.length < PAGE_SIZE) setHasMore(false);
+    } catch (e) {
+      console.error("Failed to load more:", e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [contents.length, isLoadingMore, hasMore, appendContents, setIsLoadingMore, setHasMore]);
 
   useEffect(() => {
-    loadContent();
-  }, [loadContent]);
+    loadInitial();
+  }, [loadInitial]);
+
+  // Scroll listener: trigger loadMore when near bottom of scroll container
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || !hasMore) return;
+    const handleScroll = () => {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 300) {
+        loadMore();
+      }
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [hasMore, loadMore]);
 
   useEffect(() => {
-    const handleFocus = () => { loadContent(); };
+    const handleFocus = () => { loadInitial(); };
     window.addEventListener("focus", handleFocus);
     return () => { window.removeEventListener("focus", handleFocus); };
-  }, [loadContent]);
+  }, [loadInitial]);
 
-  // Listen for URL content fetch completion from Rust backend
-  // When URL content is fetched, reload all content from DB to get the updated raw_text.
-  useEffect(() => {
-    const unlisten = listen<{ id: string }>(
-      "content:url-fetched",
-      (_event) => {
-        loadContent();
+  // Listen for content updates — reload single item instead of full list
+  const reloadSingleItem = useCallback(async (id: string) => {
+    if (!id) return;
+    try {
+      const items = await getContentsByIds([id]);
+      if (items.length > 0) {
+        useContentStore.getState().updateContent(items[0]);
       }
+    } catch (e) { console.error("Failed to reload item:", e); }
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<{ id: string; reorder?: boolean }>(
+      "content:url-fetched",
+      (event) => { reloadSingleItem(event.payload.id); }
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [loadContent]);
+  }, [reloadSingleItem]);
 
-  // Listen for AI clean content completion — reload to show cleaned article
   useEffect(() => {
     const unlisten = listen<string>(
       "content:clean-ready",
-      (_event) => {
-        loadContent();
-      }
+      (event) => { reloadSingleItem(event.payload); }
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [loadContent]);
+  }, [reloadSingleItem]);
 
-  // Listen for AI summary/tags completion — reload to show tags and summary
   useEffect(() => {
     const unlisten = listen<string>(
       "content-summary-ready",
-      (_event) => {
-        loadContent();
-      }
+      (event) => { reloadSingleItem(event.payload); }
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [loadContent]);
+  }, [reloadSingleItem]);
 
-  // Listen for OCR completion — reload to show recognized text
   useEffect(() => {
     const unlisten = listen<{ id: string }>(
       "content:ocr-done",
-      (_event) => {
-        loadContent();
-      }
+      (event) => { reloadSingleItem(event.payload.id); }
     );
     return () => { unlisten.then((fn) => fn()); };
-  }, [loadContent]);
+  }, [reloadSingleItem]);
 
   // Handle scroll-to-item when scrollToId changes
   useEffect(() => {
@@ -163,12 +197,12 @@ export function ContentList() {
   }, [contents, filter, sensitiveFilterEnabled, dateRange]);
 
   const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: contents.length };
+    const counts: Record<string, number> = { all: totalCount };
     for (const c of contents) {
       counts[c.content_type] = (counts[c.content_type] || 0) + 1;
     }
     return counts;
-  }, [contents]);
+  }, [contents, totalCount]);
 
   if (isLoading) {
     return (
@@ -216,7 +250,7 @@ export function ContentList() {
   }
 
   return (
-    <div className="overflow-y-auto p-4 space-y-3" style={{ height: "calc(100vh - 44px)" }}>
+    <div ref={scrollContainerRef} className="overflow-y-auto p-4 space-y-3" style={{ height: "calc(100vh - 44px)" }}>
       {/* Header with filter tabs */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-1 p-0.5 rounded-xl glass">
@@ -345,6 +379,13 @@ export function ContentList() {
               ref={(el) => { cardRefs.current[content.id] = el; }}
             />
           ))}
+          {hasMore && isLoadingMore && (
+            <div className="flex justify-center py-4">
+              <span className="text-xs text-gray-400 dark:text-slate-500 animate-pulse">
+                {t("loading", "加载中...")}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
