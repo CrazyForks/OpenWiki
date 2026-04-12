@@ -712,7 +712,7 @@ export default function BubbleView() {
 
           {/* Layer 2: Confirmed content — fades in on confirm */}
           <div
-            className="absolute inset-0 flex items-center justify-center"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
             style={{ opacity: confirmed ? 1 : 0, transition: "opacity 0.25s ease" }}
           >
             {/* Checkmark with draw animation */}
@@ -763,13 +763,18 @@ export default function BubbleView() {
     : "from-orange-500/20 to-amber-500/20";
   const iconEmoji = isImage ? "📷" : isUrl ? "🔗" : "📋";
 
-  // Bar mode: click executes default action
-  const barClick = confirmed ? undefined : (defaultAction === "save" ? confirm : dismiss);
+  // In bar mode, only the explicit save button should trigger a save/dismiss
+  // when the default action is "dismiss". Clicking the whole bar looked like a
+  // primary confirmation target and caused accidental ignores.
+  const barBodyClickable = !confirmed && defaultAction === "save";
+  const barClick = barBodyClickable ? confirm : undefined;
 
   return (
     <div className="w-[340px] h-[72px] select-none" style={{ background: "transparent" }}>
       <div
-        className="relative w-full h-full rounded-2xl overflow-hidden cursor-pointer group"
+        className={`relative w-full h-full rounded-2xl overflow-hidden group ${
+          barBodyClickable ? "cursor-pointer" : "cursor-default"
+        }`}
         onClick={barClick}
         style={{
           background: confirmed ? "#16A34A" : "rgb(15, 15, 30)",
@@ -842,7 +847,7 @@ export default function BubbleView() {
           </div>
         </div>
         {/* Layer 2: Bar confirmed content — fades in on confirm */}
-        <div className="absolute inset-0 flex items-center justify-center gap-2"
+        <div className="absolute inset-0 flex items-center justify-center gap-2 pointer-events-none"
           style={{ opacity: confirmed ? 1 : 0, transition: "opacity 0.25s ease" }}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 13l4 4L19 7"
