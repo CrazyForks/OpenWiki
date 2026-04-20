@@ -249,12 +249,21 @@ impl UrlReader {
                 .map(|s| s.to_string());
             (t, extract_twitter_article_content(article))
         } else {
-            let text = tweet
+            // JSON API truncates NoteTweets to the first paragraph (~88 chars)
+            // and its `is_note_tweet` flag is unreliable. Fetch fxtwitter's HTML
+            // (bot UA) and prefer its og:description which expands the full text.
+            let json_text = tweet
                 .get("text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            (None, text)
+            let full = self
+                .fetch_twitter_full_text(user.as_str(), tweet_id.as_str())
+                .await
+                .ok()
+                .flatten()
+                .filter(|s| s.chars().count() > json_text.chars().count());
+            (None, full.unwrap_or(json_text))
         };
 
         // No minimum length check — user chose to save it, respect that
@@ -280,6 +289,47 @@ impl UrlReader {
                 ))
             }),
         })
+    }
+
+    /// Fetch fxtwitter's HTML page with a bot User-Agent and pull the full text
+    /// out of the `og:description` meta tag. This is needed because fxtwitter's
+    /// JSON API returns only the first paragraph of NoteTweets (X long tweets).
+    /// The HTML renderer expands them correctly and joins paragraphs with `<br><br>`.
+    async fn fetch_twitter_full_text(
+        &self,
+        user: &str,
+        tweet_id: &str,
+    ) -> Result<Option<String>, String> {
+        let html_url = format!("https://fxtwitter.com/{}/status/{}", user, tweet_id);
+        let html = self
+            .http_client
+            .get(&html_url)
+            .header("User-Agent", "TelegramBot (like TwitterBot)")
+            .send()
+            .await
+            .map_err(|e| format!("fxtwitter HTML: {}", e))?
+            .text()
+            .await
+            .map_err(|e| format!("fxtwitter HTML read: {}", e))?;
+
+        let Some(raw) = extract_og_description(&html) else {
+            return Ok(None);
+        };
+        // fxtwitter joins paragraphs with literal <br><br>. Normalise to blank lines.
+        let text = raw
+            .replace("<br><br>", "\n\n")
+            .replace("<br/><br/>", "\n\n")
+            .replace("<br /><br />", "\n\n")
+            .replace("<br>", "\n")
+            .replace("<br/>", "\n")
+            .replace("<br />", "\n")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(text))
+        }
     }
 
     // ─── GitHub ────────────────────────────────────────────────────
