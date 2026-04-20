@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>OpenWiki 知识库首屏 · 三方案对比</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg: #0C0A09;
+    --surface: #1C1917;
+    --surface-raised: #292524;
+    --border: #3D3935;
+    --border-soft: rgba(255,255,255,0.06);
+    --text-primary: #FAFAF8;
+    --text-secondary: #A8A29E;
+    --text-muted: #78716C;
+    --accent: #FB923C;
+    --accent-hover: #F97316;
+    --accent-soft: #431407;
+    --amber: #D97706;
+    --green: #16A34A;
+    --blue: #2563EB;
+    --purple: #7C3AED;
+  }
+  html, body { background: var(--bg); color: var(--text-primary); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+  .font-display { font-family: 'Cabinet Grotesk', sans-serif; letter-spacing: -0.02em; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  /* Top mockup switcher */
+  .switcher {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(12,10,9,0.92); backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+  }
+  .switcher-label { font-size: 12px; color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;}
+  .switcher-btn {
+    padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    border: 1px solid var(--border); transition: all 150ms ease;
+  }
+  .switcher-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .switcher-btn.active { background: rgba(251,146,60,0.12); color: var(--accent); border-color: rgba(251,146,60,0.35); }
+
+  /* App frame simulating Tauri window */
+  .app-frame {
+    margin: 24px auto; max-width: 1280px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .titlebar {
+    height: 44px; display: flex; align-items: center;
+    padding: 0 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg); gap: 8px;
+  }
+  .titlebar-dots { display: flex; gap: 8px; margin-right: 12px; }
+  .titlebar-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .brand { font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: 15px; color: var(--accent); letter-spacing: -0.01em; margin-right: 24px; }
+  .top-tabs { display: flex; gap: 4px; margin: 0 auto;}
+  .top-tab { padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .top-tab.active { background: rgba(251,146,60,0.12); color: var(--accent); }
+  .top-search { padding: 7px; border-radius: 8px; color: var(--text-muted); cursor: pointer; }
+
+  /* Main layout */
+  .main-area { display: flex; height: 720px; }
+  .left-nav {
+    width: 60px; flex-shrink: 0; border-right: 1px solid var(--border);
+    padding: 16px 8px; display: flex; flex-direction: column; gap: 4px; align-items: center;
+  }
+  .nav-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); cursor: pointer; position: relative;
+  }
+  .nav-icon:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+  .nav-icon.active { background: rgba(251,146,60,0.12); color: var(--accent); }
+  .nav-icon .badge {
+    position: absolute; top: 6px; right: 6px; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--amber);
+  }
+
+  .content-area { flex: 1; overflow-y: auto; position: relative; }
+
+  /* Shared components */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+    background: rgba(255,255,255,0.04); color: var(--text-secondary);
+    border: 1px solid var(--border-soft); cursor: pointer; transition: all 120ms;
+  }
+  .chip:hover { background: rgba(251,146,60,0.08); color: var(--accent); border-color: rgba(251,146,60,0.25); }
+  .section-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+    font-weight: 700; color: var(--text-muted);
+  }
+  .dashed { border-bottom: 1px dashed rgba(255,255,255,0.08); }
+
+  .page-type-badge {
+    font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.08em; min-width: 44px; text-align: center;
+  }
+
+  .hidden-option { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Switcher -->
+<div class="switcher">
+  <span class="switcher-label">方案对比</span>
+  <button class="switcher-btn active" data-option="a">A · 搜索式</button>
+  <button class="switcher-btn" data-option="b">B · 仪表盘式</button>
+  <button class="switcher-btn" data-option="c">C · 工作台式</button>
+  <div style="flex:1"></div>
+  <span style="font-size:11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">OpenWiki · 知识库首屏设计稿</span>
+</div>
+
+<!-- ===================== 方案 A：搜索式 ===================== -->
+<div id="option-a">
+  <div class="app-frame">
+    <div class="titlebar">
+      <div class="titlebar-dots">
+        <div class="titlebar-dot" style="background:#FF5F57"></div>
+        <div class="titlebar-dot" style="background:#FEBC2E"></div>
+        <div class="titlebar-dot" style="background:#28C840"></div>
+      </div>
+      <div class="brand">OpenWiki</div>
+      <div class="top-tabs">
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>内容</div>
+        <div class="top-tab active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>知识</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>洞察</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>设置</div>
+      </div>
+      <div class="top-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div>
+    </div>
+
+    <div class="main-area">
+      <!-- Left nav (icon only) -->
+      <div class="left-nav" data-nav="a">
+        <div class="nav-icon active" data-sub="ask" title="提问"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM18 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1zM5 16l.75 2.25L8 19l-2.25.75L5 22l-.75-2.25L2 19l2.25-.75L5 16z"/></svg></div>
+        <div class="nav-icon" data-sub="browse" title="浏览"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+        <div class="nav-icon" data-sub="graph" title="图谱">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <div class="badge"></div>
+        </div>
+      </div>
+
+      <!-- Main content area, contains 3 sub-views -->
+      <div class="content-area" style="position: relative;">
+
+        <!-- ═══ A/Ask: 提问子视图（搜索式） ═══ -->
+        <div id="a-ask" class="sub-view" style="display: flex; flex-direction: column; align-items: center; padding: 48px 32px;">
+          <div style="max-width: 640px; width: 100%;">
+            <div style="text-align: center; margin-bottom: 56px;">
+              <div class="font-display" style="font-size: 36px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px;">你的知识库</div>
+              <div class="font-mono" style="font-size: 12px; color: var(--text-muted);">
+                161 个知识页面 · 3 个关联 · <span style="color: var(--amber);">⚠ 5 个待更新</span>
+              </div>
+            </div>
+
+            <div style="position: relative;">
+              <textarea placeholder="你记得的是什么？模糊描述就行，AI 会帮你找到..."
+                style="width: 100%; min-height: 92px; padding: 20px 64px 20px 20px; border-radius: 16px;
+                       background: var(--surface); border: 1.5px solid var(--border);
+                       color: var(--text-primary); font-size: 15px; line-height: 1.6;
+                       outline: none; resize: none; font-family: inherit;"></textarea>
+              <button style="position: absolute; right: 12px; bottom: 12px;
+                width: 44px; height: 44px; border-radius: 12px; background: var(--accent-hover);
+                color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; justify-content: center;">
+              <!-- 本周新增 -->
+              <div class="chip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                  <polyline points="16 7 22 7 22 13"></polyline>
+                </svg>
+                本周新增
+                <span class="font-mono" style="color: var(--accent); font-weight: 700; margin-left: 2px;">12</span>
+                页
+              </div>
+              <!-- LLM 主题 -->
+              <div class="chip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-secondary);">
+                  <line x1="4" y1="9" x2="20" y2="9"/>
+                  <line x1="4" y1="15" x2="20" y2="15"/>
+                  <line x1="10" y1="3" x2="8" y2="21"/>
+                  <line x1="16" y1="3" x2="14" y2="21"/>
+                </svg>
+                LLM
+                <span class="font-mono" style="font-weight: 700; margin-left: 2px;">42</span>
+                页
+              </div>
+              <!-- 最久没看 -->
+              <div class="chip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-secondary);">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                最久没看：YC Office Hours
+                <span class="font-mono" style="color: var(--text-muted); margin-left: 4px; font-size: 10px;">124 天</span>
+              </div>
+              <!-- 待更新 -->
+              <div class="chip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--amber);">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span class="font-mono" style="color: var(--amber); font-weight: 700;">5</span>
+                页待更新
+              </div>
+              <!-- 知识孤岛 -->
+              <div class="chip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-secondary);">
+                  <line x1="6" y1="3" x2="6" y2="15"/>
+                  <circle cx="18" cy="6" r="3"/>
+                  <circle cx="6" cy="18" r="3"/>
+                  <path d="M18 9a9 9 0 0 1-9 9"/>
+                </svg>
+                <span class="font-mono" style="font-weight: 700;">3</span>
+                个知识孤岛
+              </div>
+            </div>
+
+            <div style="margin-top: 64px;">
+              <div class="section-label" style="padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px;">最近对话</div>
+              <div>
+                <div class="dashed" style="padding: 12px 4px; display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                  <span style="flex: 1; font-size: 13px;">我之前保存了一个设计的 skill</span>
+                  <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">2026-04-13</span>
+                </div>
+                <div class="dashed" style="padding: 12px 4px; display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                  <span style="flex: 1; font-size: 13px;">大疆创始人访谈</span>
+                  <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">2026-04-13</span>
+                </div>
+                <div class="dashed" style="padding: 12px 4px; display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                  <span style="flex: 1; font-size: 13px;">我之前有一个采集什么插件？那个内容你帮我找一下。</span>
+                  <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">2026-04-10</span>
+                </div>
+                <div class="dashed" style="padding: 12px 4px; display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                  <span style="flex: 1; font-size: 13px;">检查一下我目前的知识库，看看有没有相关联但没有连接的东西。</span>
+                  <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">2026-04-09</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ A/Browse: 浏览子视图 ═══ -->
+        <div id="a-browse" class="sub-view" style="display: none; padding: 40px 32px;">
+          <div style="max-width: 820px; margin: 0 auto;">
+            <!-- Header: 延续搜索哲学，搜索框为主角 -->
+            <div style="margin-bottom: 24px;">
+              <div class="font-mono" style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 0.08em;">
+                浏览 · 共 161 个知识页面
+              </div>
+              <div style="position: relative;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input placeholder="搜索你的知识页面..."
+                  style="width: 100%; padding: 14px 16px 14px 44px; border-radius: 12px;
+                         background: var(--surface); border: 1.5px solid var(--border);
+                         color: var(--text-primary); font-size: 14px; outline: none;"/>
+              </div>
+            </div>
+
+            <!-- Filter + sort row -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+              <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <div class="chip" style="padding: 6px 12px; background: rgba(251,146,60,0.12); color: var(--accent); border-color: rgba(251,146,60,0.3);">全部 <span class="font-mono" style="opacity: 0.7; margin-left: 3px;">161</span></div>
+                <div class="chip" style="padding: 6px 12px;">概念 <span class="font-mono" style="opacity: 0.6; margin-left: 3px;">61</span></div>
+                <div class="chip" style="padding: 6px 12px;">来源 <span class="font-mono" style="opacity: 0.6; margin-left: 3px;">43</span></div>
+                <div class="chip" style="padding: 6px 12px;">实体 <span class="font-mono" style="opacity: 0.6; margin-left: 3px;">28</span></div>
+                <div class="chip" style="padding: 6px 12px;">对比 <span class="font-mono" style="opacity: 0.6; margin-left: 3px;">14</span></div>
+                <div class="chip" style="padding: 6px 12px;">问答 <span class="font-mono" style="opacity: 0.6; margin-left: 3px;">15</span></div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);">
+                <span>排序：</span>
+                <span style="color: var(--text-primary); font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                  最近更新
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </div>
+            </div>
+
+            <!-- List -->
+            <div style="border-top: 1px solid var(--border);">
+              <!-- 表头不需要，克制 -->
+              <!-- Row 1 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">Context Engineering 基本原理</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px; align-items: center;">
+                    <span>LLM</span><span>·</span><span>AI Agent</span><span>·</span><span>提示词工程</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-18</span>
+              </div>
+              <!-- Row 2 (stale) -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer; background: rgba(217,119,6,0.03);">
+                <span class="page-type-badge" style="color: #16A34A; background: rgba(22,163,74,0.12);">SOURCE</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px; display: flex; align-items: center; gap: 8px;">
+                    Karpathy LLM 入门课
+                    <span style="font-size: 9px; padding: 1px 6px; border-radius: 3px; background: rgba(217,119,6,0.15); color: var(--amber); font-weight: 600;">⚠ 待更新</span>
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>LLM</span><span>·</span><span>教程</span><span>·</span><span>Neural Network</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-17</span>
+              </div>
+              <!-- Row 3 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #2563EB; background: rgba(37,99,235,0.14);">ENTITY</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">Anthropic Claude 团队</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>人物</span><span>·</span><span>AI</span><span>·</span><span>Claude</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-15</span>
+              </div>
+              <!-- Row 4 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">MCP 协议基础</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>协议</span><span>·</span><span>AI Agent</span><span>·</span><span>工具调用</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-14</span>
+              </div>
+              <!-- Row 5 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #CA8A04; background: rgba(202,138,4,0.14);">COMP</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">Obsidian vs Notion</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>知识管理</span><span>·</span><span>工具对比</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-13</span>
+              </div>
+              <!-- Row 6 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #78716C; background: rgba(120,113,108,0.18);">QA</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">design-shotgun skill 怎么用</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>设计</span><span>·</span><span>skill</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-13</span>
+              </div>
+              <!-- Row 7 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #2563EB; background: rgba(37,99,235,0.14);">ENTITY</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">大疆创新 DJI</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>公司</span><span>·</span><span>创业</span><span>·</span><span>硬件</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-12</span>
+              </div>
+              <!-- Row 8 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #7C3AED; background: rgba(124,58,237,0.14);">OVERVIEW</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">AI Agent 架构模式总览</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>AI Agent</span><span>·</span><span>架构</span><span>·</span><span>ReAct</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-11</span>
+              </div>
+              <!-- Row 9 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">Prompt Caching 命中率</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>Claude API</span><span>·</span><span>性能优化</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-10</span>
+              </div>
+              <!-- Row 10 -->
+              <div style="padding: 14px 4px; display: flex; align-items: center; gap: 16px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+                <span class="page-type-badge" style="color: #16A34A; background: rgba(22,163,74,0.12);">SOURCE</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 600; margin-bottom: 3px;">YC Office Hours 六问</div>
+                  <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 10px;">
+                    <span>创业</span><span>·</span><span>YC</span><span>·</span><span>方法论</span>
+                  </div>
+                </div>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">04-09</span>
+              </div>
+            </div>
+
+            <!-- Pagination hint -->
+            <div style="padding: 20px 4px; text-align: center; font-size: 12px; color: var(--text-muted);">
+              显示前 10 条 · 向下滚动查看更多
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ A/Graph: 图谱子视图 ═══ -->
+        <div id="a-graph" class="sub-view" style="display: none; position: absolute; inset: 0; overflow: hidden;">
+          <!-- Top-left stats overlay -->
+          <div style="position: absolute; top: 20px; left: 24px; z-index: 5;">
+            <div class="font-mono" style="font-size: 11px; color: var(--text-muted); letter-spacing: 0.08em;">
+              关联图谱
+            </div>
+            <div class="font-mono" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              <span style="color: var(--text-primary); font-weight: 600;">161</span> 节点 ·
+              <span style="color: var(--amber); font-weight: 600;">3</span> 边 ·
+              图谱密度 <span style="color: var(--text-primary);">0.02%</span>
+            </div>
+          </div>
+
+          <!-- Top-right controls -->
+          <div style="position: absolute; top: 20px; right: 24px; z-index: 5; display: flex; gap: 8px;">
+            <div style="display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 3px;">
+              <button style="padding: 6px 10px; font-size: 11px; font-weight: 500; border-radius: 6px; background: rgba(251,146,60,0.12); color: var(--accent); border: none; cursor: pointer;">全部</button>
+              <button style="padding: 6px 10px; font-size: 11px; font-weight: 500; border-radius: 6px; background: transparent; color: var(--text-muted); border: none; cursor: pointer;">仅概念</button>
+              <button style="padding: 6px 10px; font-size: 11px; font-weight: 500; border-radius: 6px; background: transparent; color: var(--text-muted); border: none; cursor: pointer;">最近</button>
+            </div>
+            <button style="padding: 7px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"/></svg>
+            </button>
+          </div>
+
+          <!-- D3 graph canvas -->
+          <svg id="graph-svg" style="width: 100%; height: 100%; display: block;"></svg>
+
+          <!-- Bottom hint card: 提示图谱很稀疏 -->
+          <div style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 5;
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            padding: 12px 16px; display: flex; align-items: center; gap: 12px; max-width: 560px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: rgba(251,146,60,0.12); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">图谱很稀疏，只有 3 条关联</div>
+              <div style="font-size: 11px; color: var(--text-muted); line-height: 1.5;">AI 可以分析知识页面发现潜在连接。</div>
+            </div>
+            <button style="font-size: 11px; padding: 6px 12px; background: var(--accent-hover); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; flex-shrink: 0;">
+              运行关联分析
+            </button>
+          </div>
+
+          <!-- Legend bottom-left -->
+          <div style="position: absolute; left: 24px; bottom: 24px; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;">
+            <div class="section-label" style="margin-bottom: 6px; font-size: 9px;">图例</div>
+            <div style="display: flex; flex-direction: column; gap: 5px; font-size: 11px;">
+              <div style="display: flex; align-items: center; gap: 7px;"><div style="width: 9px; height: 9px; border-radius: 50%; background: #F97316;"></div>概念 61</div>
+              <div style="display: flex; align-items: center; gap: 7px;"><div style="width: 9px; height: 9px; border-radius: 50%; background: #16A34A;"></div>来源 43</div>
+              <div style="display: flex; align-items: center; gap: 7px;"><div style="width: 9px; height: 9px; border-radius: 50%; background: #2563EB;"></div>实体 28</div>
+              <div style="display: flex; align-items: center; gap: 7px;"><div style="width: 9px; height: 9px; border-radius: 50%; background: #CA8A04;"></div>对比 14</div>
+              <div style="display: flex; align-items: center; gap: 7px;"><div style="width: 9px; height: 9px; border-radius: 50%; background: #78716C;"></div>问答 15</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="max-width: 1280px; margin: 0 auto 48px; padding: 16px 24px; font-size: 13px; color: var(--text-muted); line-height: 1.7;">
+    <strong style="color: var(--accent); font-weight: 700;">方案 A · 哲学</strong>：一切入口都是提问。界面极简到只剩一个核心动作，其他都是辅助。<br>
+    <strong style="color: var(--text-secondary);">适合谁</strong>：已经知道自己在找什么的老用户。想快速找回、不想被打扰。<br>
+    <strong style="color: var(--text-secondary);">风险</strong>：新用户/偶尔用的人看不到知识库的"脉动"，没被吸引回来的理由。
+  </div>
+</div>
+
+<!-- ===================== 方案 B：仪表盘式 ===================== -->
+<div id="option-b" class="hidden-option">
+  <div class="app-frame">
+    <div class="titlebar">
+      <div class="titlebar-dots">
+        <div class="titlebar-dot" style="background:#FF5F57"></div>
+        <div class="titlebar-dot" style="background:#FEBC2E"></div>
+        <div class="titlebar-dot" style="background:#28C840"></div>
+      </div>
+      <div class="brand">OpenWiki</div>
+      <div class="top-tabs">
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>内容</div>
+        <div class="top-tab active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>知识</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>洞察</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>设置</div>
+      </div>
+      <div class="top-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div>
+    </div>
+
+    <div class="main-area">
+      <div class="left-nav">
+        <div class="nav-icon active" title="首页"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+        <div class="nav-icon" title="提问"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z"/></svg></div>
+        <div class="nav-icon" title="浏览"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+        <div class="nav-icon" title="图谱"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></div>
+      </div>
+
+      <div class="content-area" style="padding: 28px 40px;">
+        <!-- Header row: greeting + small ask -->
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px;">
+          <div>
+            <div class="font-display" style="font-size: 28px; font-weight: 800;">晚上好，Ray</div>
+            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 6px;">
+              <span class="font-mono">161</span> 个知识页面在等你 · 今天想翻看点什么？
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; width: 340px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input placeholder="问一下知识库..." style="flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13px;" />
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted); padding: 2px 6px; background: var(--surface-raised); border-radius: 4px;">⏎</span>
+          </div>
+        </div>
+
+        <!-- Three column grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+
+          <!-- Column 1: Today's worth revisiting -->
+          <div>
+            <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <span>⭐ 今日值得重看</span>
+              <span style="color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400;">3 页</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                  <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                  <span style="font-size: 10px; color: var(--text-muted);" class="font-mono">上次 31 天前</span>
+                </div>
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Context Engineering 基本原理</div>
+                <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">提示词工程的进阶版，关注如何组织、压缩、动态注入上下文⋯</div>
+              </div>
+              <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                  <span class="page-type-badge" style="color: #2563EB; background: rgba(37,99,235,0.14);">ENTITY</span>
+                  <span style="font-size: 10px; color: var(--text-muted);" class="font-mono">上次 48 天前</span>
+                </div>
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">大疆创新 DJI</div>
+                <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">消费级无人机全球市场龙头。创始人汪滔的工程主义、克制⋯</div>
+              </div>
+              <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                  <span class="page-type-badge" style="color: #7C3AED; background: rgba(124,58,237,0.14);">OVERVIEW</span>
+                  <span style="font-size: 10px; color: var(--text-muted);" class="font-mono">上次 63 天前</span>
+                </div>
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">AI Agent 架构模式总览</div>
+                <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">ReAct、Plan-and-Execute、Multi-Agent 编排、路由代理⋯</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 2: Recent additions -->
+          <div>
+            <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <span>🆕 最近 7 天新增</span>
+              <span style="color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400;">12 页</span>
+            </div>
+            <div>
+              <div class="dashed" style="padding: 10px 4px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                <span style="flex: 1; font-size: 13px; font-weight: 500;">Prompt Caching 命中率</span>
+                <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-18</span>
+              </div>
+              <div class="dashed" style="padding: 10px 4px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span class="page-type-badge" style="color: #16A34A; background: rgba(22,163,74,0.12);">SOURCE</span>
+                <span style="flex: 1; font-size: 13px; font-weight: 500;">Karpathy LLM 入门课</span>
+                <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-17</span>
+              </div>
+              <div class="dashed" style="padding: 10px 4px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span class="page-type-badge" style="color: #2563EB; background: rgba(37,99,235,0.14);">ENTITY</span>
+                <span style="flex: 1; font-size: 13px; font-weight: 500;">Anthropic Claude 团队</span>
+                <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-15</span>
+              </div>
+              <div class="dashed" style="padding: 10px 4px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+                <span style="flex: 1; font-size: 13px; font-weight: 500;">MCP 协议基础</span>
+                <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-14</span>
+              </div>
+              <div class="dashed" style="padding: 10px 4px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <span class="page-type-badge" style="color: #CA8A04; background: rgba(202,138,4,0.14);">COMP</span>
+                <span style="flex: 1; font-size: 13px; font-weight: 500;">Obsidian vs Notion 对比</span>
+                <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-13</span>
+              </div>
+              <div style="padding: 10px 4px; font-size: 11px; color: var(--text-muted); text-align: center; cursor: pointer;">查看全部 12 条 →</div>
+            </div>
+          </div>
+
+          <!-- Column 3: Needs attention -->
+          <div>
+            <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <span style="color: var(--amber);">⚠ 需要关注</span>
+              <span style="color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400;">5 待更新 · 3 孤岛</span>
+            </div>
+
+            <div style="padding: 12px; background: rgba(217,119,6,0.06); border: 1px solid rgba(217,119,6,0.2); border-radius: 10px; margin-bottom: 10px;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px;">5 页源内容已变化</div>
+              <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px;">源文档更新了，但知识页面还是旧的。</div>
+              <button style="font-size: 11px; padding: 5px 10px; background: var(--amber); color: white; border: none; border-radius: 6px; cursor: pointer;">一键重编译</button>
+            </div>
+
+            <div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: 10px; margin-bottom: 10px;">
+              <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">3 个知识孤岛</div>
+              <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px;">和其他页面主题相关但没被连起来。</div>
+              <button style="font-size: 11px; padding: 5px 10px; background: var(--surface-raised); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">查看建议连接 →</button>
+            </div>
+
+            <div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: 10px;">
+              <div style="font-size: 12px; font-weight: 700; margin-bottom: 6px;">低置信度页面 2 个</div>
+              <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">AI 编译结果置信度 &lt; 70%，建议补充来源。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent chats horizontal -->
+        <div style="margin-top: 32px;">
+          <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px;">💬 最近对话</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+            <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+              <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.4;">我之前保存了一个设计的 skill</div>
+              <div class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-13</div>
+            </div>
+            <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+              <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.4;">大疆创始人访谈</div>
+              <div class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-13</div>
+            </div>
+            <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+              <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">我之前有一个采集什么插件？那个内容你帮我找一下</div>
+              <div class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-10</div>
+            </div>
+            <div style="padding: 12px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; cursor: pointer;">
+              <div style="font-size: 13px; font-weight: 500; margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">检查一下我目前的知识库，看看有没有相关联但没连接的</div>
+              <div class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-09</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="max-width: 1280px; margin: 0 auto 48px; padding: 16px 24px; font-size: 13px; color: var(--text-muted); line-height: 1.7;">
+    <strong style="color: var(--accent); font-weight: 700;">方案 B · 哲学</strong>：知识库是你的"家"，进来不该只看到一个空搜索框。展示"今天发生了什么、应该关注什么"。<br>
+    <strong style="color: var(--text-secondary);">适合谁</strong>：来激发灵感、不知道自己要找什么、希望被知识库"喂"回来的用户。<br>
+    <strong style="color: var(--text-secondary);">风险</strong>：信息密度高，新用户可能被淹没。提问入口从中心变边角，可能拖慢"快速问一下"场景。
+  </div>
+</div>
+
+<!-- ===================== 方案 C：工作台式 ===================== -->
+<div id="option-c" class="hidden-option">
+  <div class="app-frame">
+    <div class="titlebar">
+      <div class="titlebar-dots">
+        <div class="titlebar-dot" style="background:#FF5F57"></div>
+        <div class="titlebar-dot" style="background:#FEBC2E"></div>
+        <div class="titlebar-dot" style="background:#28C840"></div>
+      </div>
+      <div class="brand">OpenWiki</div>
+      <div class="top-tabs">
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>内容</div>
+        <div class="top-tab active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>知识</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>洞察</div>
+        <div class="top-tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>设置</div>
+      </div>
+      <div class="top-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div>
+    </div>
+
+    <div style="display: flex; height: 720px;">
+      <!-- Left: Topics -->
+      <div style="width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 24px 16px; overflow-y: auto;">
+        <div class="section-label" style="margin-bottom: 12px;">主题</div>
+
+        <!-- Top topics -->
+        <div style="display: flex; flex-direction: column; gap: 2px; margin-bottom: 24px;">
+          <div style="padding: 8px 10px; background: rgba(251,146,60,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px; color: var(--accent); font-weight: 600;">全部</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--accent);">161</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">LLM & AI</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">42</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">创业 & 产品</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">28</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">设计</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">24</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">工具 & Hack</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">19</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">Rust & 系统</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">15</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">知识管理</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">12</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">人物访谈</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">9</span>
+          </div>
+          <div style="padding: 8px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <span style="font-size: 13px;">未分类</span>
+            <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">12</span>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-bottom: 10px;">类型</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px;">
+          <div class="chip" style="padding: 4px 9px; font-size: 11px;">概念 61</div>
+          <div class="chip" style="padding: 4px 9px; font-size: 11px;">来源 43</div>
+          <div class="chip" style="padding: 4px 9px; font-size: 11px;">实体 28</div>
+          <div class="chip" style="padding: 4px 9px; font-size: 11px;">对比 14</div>
+          <div class="chip" style="padding: 4px 9px; font-size: 11px;">问答 15</div>
+        </div>
+
+        <div class="section-label" style="margin-bottom: 10px;">视图</div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="padding: 7px 10px; border-radius: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>浏览列表</div>
+          <div style="padding: 7px 10px; border-radius: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>关联图谱</div>
+        </div>
+      </div>
+
+      <!-- Center: Ask + recent conversations -->
+      <div style="flex: 1; padding: 28px 32px; overflow-y: auto;">
+        <div style="margin-bottom: 20px;">
+          <div class="font-display" style="font-size: 22px; font-weight: 800; margin-bottom: 4px;">问问你的知识库</div>
+          <div style="font-size: 12px; color: var(--text-muted);">基于你积累的 <span class="font-mono">161</span> 个知识页面</div>
+        </div>
+
+        <!-- Ask box -->
+        <div style="position: relative; margin-bottom: 12px;">
+          <textarea placeholder="你记得的是什么？模糊描述就行..." style="width: 100%; min-height: 80px; padding: 16px 56px 16px 16px; border-radius: 12px; background: var(--surface); border: 1.5px solid var(--border); color: var(--text-primary); font-size: 14px; line-height: 1.6; outline: none; resize: none; font-family: inherit;"></textarea>
+          <button style="position: absolute; right: 10px; bottom: 10px; width: 38px; height: 38px; border-radius: 10px; background: var(--accent-hover); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+
+        <!-- Quick chips -->
+        <div style="display: flex; gap: 6px; margin-bottom: 28px;">
+          <div class="chip" style="padding: 5px 10px; font-size: 11px;">💭 最近学什么？</div>
+          <div class="chip" style="padding: 5px 10px; font-size: 11px;">🔗 未连接项</div>
+          <div class="chip" style="padding: 5px 10px; font-size: 11px;">⏳ 温故知新</div>
+        </div>
+
+        <!-- Recent conversations, richer -->
+        <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+          <span>💬 最近对话</span>
+          <span style="color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400;">共 23 条</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column;">
+          <div style="padding: 14px 4px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px;">
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">我之前保存了一个设计的 skill</div>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted); flex-shrink: 0; margin-left: 12px;">04-13</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px;">你说的应该是 <span style="color: var(--accent);">design-shotgun</span>，一个生成多个 AI 设计变体再对比的 skill⋯</div>
+            <div style="display: flex; gap: 6px;">
+              <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; color: var(--accent); background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2);">design-shotgun</span>
+              <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; color: var(--accent); background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2);">skill-creator</span>
+            </div>
+          </div>
+          <div style="padding: 14px 4px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px;">
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">大疆创始人访谈</div>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted); flex-shrink: 0; margin-left: 12px;">04-13</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px;">汪滔对工程主义和克制的坚持贯穿访谈。他谈到早期做 Ace One 时⋯</div>
+            <div style="display: flex; gap: 6px;">
+              <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; color: var(--accent); background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2);">大疆创新 DJI</span>
+              <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; color: var(--accent); background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.2);">创业精神</span>
+            </div>
+          </div>
+          <div style="padding: 14px 4px; border-bottom: 1px dashed rgba(255,255,255,0.08); cursor: pointer;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px;">
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">我之前有一个采集插件？</div>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted); flex-shrink: 0; margin-left: 12px;">04-10</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">你装过 Save to Notion 和 Clipper by Omnivore，都是网页剪藏到⋯</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Pulse panel -->
+      <div style="width: 280px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 24px 20px; overflow-y: auto;">
+
+        <!-- Needs attention card -->
+        <div style="padding: 14px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.25); border-radius: 10px; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--amber);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span style="font-size: 12px; font-weight: 700; color: var(--amber);">需要注意</span>
+          </div>
+          <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px;">
+            <div><span class="font-mono" style="color: var(--amber);">5</span> 页源已变化</div>
+            <div><span class="font-mono" style="color: var(--text-primary);">3</span> 个知识孤岛</div>
+            <div><span class="font-mono" style="color: var(--text-primary);">2</span> 个低置信度</div>
+          </div>
+          <button style="width: 100%; font-size: 11px; padding: 7px; background: var(--amber); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">处理 10 项 →</button>
+        </div>
+
+        <!-- Recent additions -->
+        <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px;">🆕 最近沉淀</div>
+        <div style="margin-bottom: 20px;">
+          <div class="dashed" style="padding: 9px 2px; cursor: pointer;">
+            <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px;">Prompt Caching 命中率</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-18</span>
+            </div>
+          </div>
+          <div class="dashed" style="padding: 9px 2px; cursor: pointer;">
+            <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px;">Karpathy LLM 入门课</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="page-type-badge" style="color: #16A34A; background: rgba(22,163,74,0.12);">SOURCE</span>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-17</span>
+            </div>
+          </div>
+          <div class="dashed" style="padding: 9px 2px; cursor: pointer;">
+            <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px;">Anthropic Claude 团队</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="page-type-badge" style="color: #2563EB; background: rgba(37,99,235,0.14);">ENTITY</span>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-15</span>
+            </div>
+          </div>
+          <div class="dashed" style="padding: 9px 2px; cursor: pointer;">
+            <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px;">MCP 协议基础</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="page-type-badge" style="color: var(--accent); background: rgba(251,146,60,0.12);">CONCEPT</span>
+              <span class="font-mono" style="font-size: 10px; color: var(--text-muted);">04-14</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Random discover -->
+        <div class="section-label" style="padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+          <span>🎲 今日偶遇</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted); cursor: pointer;"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+        </div>
+        <div style="padding: 10px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; cursor: pointer;">
+          <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">YC Office Hours 六问</div>
+          <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">需求真实度、现状、执著具体性、最窄楔子、观察、未来⋯上次读 124 天前。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="max-width: 1280px; margin: 0 auto 48px; padding: 16px 24px; font-size: 13px; color: var(--text-muted); line-height: 1.7;">
+    <strong style="color: var(--accent); font-weight: 700;">方案 C · 哲学</strong>：知识按主题聚合。提问、浏览、感知现状三条路并列，让用户自己选入口。<br>
+    <strong style="color: var(--text-secondary);">适合谁</strong>：想系统性使用、沿主题深挖、把知识库当"第二大脑"用的用户。<br>
+    <strong style="color: var(--text-secondary);">风险</strong>：三栏布局信息很满，小屏观感压抑；主题需要 tag 系统支撑（目前是否够成熟？）。
+  </div>
+</div>
+
+<script>
+  // Top switcher: A/B/C
+  const btns = document.querySelectorAll('.switcher-btn');
+  const options = { a: document.getElementById('option-a'), b: document.getElementById('option-b'), c: document.getElementById('option-c') };
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.option;
+      btns.forEach(b => b.classList.toggle('active', b === btn));
+      Object.entries(options).forEach(([k, el]) => el.classList.toggle('hidden-option', k !== key));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (key === 'a') renderGraphIfNeeded();
+    });
+  });
+
+  // A's left nav: switch sub-views (ask/browse/graph)
+  const aNav = document.querySelector('[data-nav="a"]');
+  const aSubs = { ask: document.getElementById('a-ask'), browse: document.getElementById('a-browse'), graph: document.getElementById('a-graph') };
+  aNav.querySelectorAll('.nav-icon').forEach(icon => {
+    icon.addEventListener('click', () => {
+      const sub = icon.dataset.sub;
+      aNav.querySelectorAll('.nav-icon').forEach(i => i.classList.toggle('active', i === icon));
+      Object.entries(aSubs).forEach(([k, el]) => el.style.display = (k === sub ? (k === 'graph' ? 'block' : (k === 'ask' ? 'flex' : 'block')) : 'none'));
+      if (sub === 'graph') renderGraphIfNeeded();
+    });
+  });
+
+  // D3 Force Graph — mocking 161 nodes, 3 edges
+  let graphRendered = false;
+  function renderGraphIfNeeded() {
+    if (graphRendered) return;
+    const svgEl = document.getElementById('graph-svg');
+    if (!svgEl || svgEl.clientWidth === 0) { setTimeout(renderGraphIfNeeded, 100); return; }
+    graphRendered = true;
+
+    const width = svgEl.clientWidth;
+    const height = svgEl.clientHeight;
+
+    // Generate nodes: 161 total, distributed by type
+    const typeCounts = { concept: 61, source: 43, entity: 28, comparison: 14, qa: 15 };
+    const typeColors = { concept: '#F97316', source: '#16A34A', entity: '#2563EB', comparison: '#CA8A04', qa: '#78716C' };
+    const nodes = [];
+    let id = 0;
+    Object.entries(typeCounts).forEach(([type, count]) => {
+      for (let i = 0; i < count; i++) nodes.push({ id: id++, type, radius: 4 + Math.random() * 2 });
+    });
+
+    // Only 3 edges to show sparse state
+    const links = [
+      { source: 0, target: 1 },   // concept-concept
+      { source: 104, target: 2 }, // entity-concept
+      { source: 61, target: 5 },  // source-concept
+    ];
+
+    const svg = d3.select(svgEl);
+    const g = svg.append('g');
+
+    // Zoom
+    svg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', (e) => g.attr('transform', e.transform)));
+
+    const link = g.append('g')
+      .attr('stroke', '#FB923C')
+      .attr('stroke-opacity', 0.5)
+      .attr('stroke-width', 1.5)
+      .selectAll('line')
+      .data(links)
+      .join('line');
+
+    const node = g.append('g')
+      .selectAll('circle')
+      .data(nodes)
+      .join('circle')
+      .attr('r', d => d.radius)
+      .attr('fill', d => typeColors[d.type])
+      .attr('opacity', 0.8)
+      .attr('stroke', 'rgba(0,0,0,0.3)')
+      .attr('stroke-width', 0.5)
+      .style('cursor', 'pointer');
+
+    node.append('title').text(d => `${d.type} #${d.id}`);
+
+    const sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(50).strength(0.8))
+      .force('charge', d3.forceManyBody().strength(-15))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collide', d3.forceCollide(7))
+      .on('tick', () => {
+        link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        node.attr('cx', d => d.x).attr('cy', d => d.y);
+      });
+
+    // Drag support
+    node.call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+  }
+</script>
+</body>
+</html>
