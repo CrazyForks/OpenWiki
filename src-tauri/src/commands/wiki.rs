@@ -132,50 +132,6 @@ pub async fn compile_content_to_wiki(
     }
 }
 
-#[tauri::command]
-pub async fn trigger_wiki_auto_compile(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let db = state.db.clone();
-    let repo = Repository::new(db.clone());
-
-    // Find content that hasn't been assessed at current version
-    let all_content = repo
-        .get_all_content(200, 0)
-        .map_err(|e| e.to_string())?;
-
-    let mut compiled = 0;
-    let mut skipped = 0;
-    let mut errors = 0;
-
-    for content in &all_content {
-        let current_hash = wiki_engine::compute_content_hash(content);
-        if content.wiki_assessed_hash.as_deref() == Some(&current_hash) {
-            continue; // Already assessed at this version
-        }
-        match wiki_engine::auto_compile(db.clone(), &content.id).await {
-            Ok(()) => compiled += 1,
-            Err(e) => {
-                log::warn!("Wiki auto-compile error for {}: {}", content.id, e);
-                errors += 1;
-            }
-        }
-        skipped += 1;
-    }
-
-    // Auto-link pages by shared tags after batch compilation
-    let tag_edges = wiki_engine::link_pages_by_shared_tags(db).unwrap_or(0);
-
-    let _ = app.emit("wiki-auto-compile-complete", "done");
-
-    Ok(serde_json::json!({
-        "processed": compiled + skipped,
-        "compiled": compiled,
-        "errors": errors,
-        "tag_edges": tag_edges,
-    }))
-}
 
 // ===== Q&A (3-stage: rewrite → retrieve → answer) =====
 

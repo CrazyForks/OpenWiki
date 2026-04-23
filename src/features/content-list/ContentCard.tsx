@@ -394,7 +394,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
                   {copied ? t("card.copied") : t("card.copy")}
                 </button>
               )}
-              {(content.raw_text || content.user_note || content.source_url) && (
+              {linkedWikiPages.length === 0 && (content.raw_text || content.user_note || content.source_url) && (
                 <button
                   onClick={handleWikiCompile}
                   disabled={wikiState === "compiling"}

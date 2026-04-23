@@ -50,14 +50,6 @@ export async function compileContentToWiki(contentId: string): Promise<string[]>
   return invoke("compile_content_to_wiki", { contentId });
 }
 
-export async function triggerWikiAutoCompile(): Promise<{
-  processed: number;
-  compiled: number;
-  errors: number;
-}> {
-  return invoke("trigger_wiki_auto_compile");
-}
-
 // ===== Q&A (multi-turn chat) =====
 
 export async function wikiAsk(sessionId: string, question: string): Promise<{

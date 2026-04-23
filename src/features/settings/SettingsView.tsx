@@ -1305,8 +1305,6 @@ function WikiSettingsSection() {
   const { t } = useTranslation("settings");
   const [stats, setStats] = useState<{ total_pages: number; total_edges: number; total_sources: number } | null>(null);
   const [autoCompile, setAutoCompile] = useState(true);
-  const [compiling, setCompiling] = useState(false);
-  const [compileResult, setCompileResult] = useState("");
 
   useEffect(() => {
     import("../../services/wikiService").then(async (ws) => {
@@ -1332,33 +1330,6 @@ function WikiSettingsSection() {
     } catch (e) {
       console.error("Failed to update wiki setting:", e);
     }
-  };
-
-  const handleBatchCompile = async () => {
-    setCompiling(true);
-    setCompileResult("");
-    try {
-      const { triggerWikiAutoCompile } = await import("../../services/wikiService");
-      const result = await triggerWikiAutoCompile();
-      if (result.errors > 0) {
-        setCompileResult(t("wiki.compileResultWithErrors", {
-          processed: result.processed,
-          compiled: result.compiled,
-          errors: result.errors,
-        }));
-      } else {
-        setCompileResult(t("wiki.compileResult", {
-          processed: result.processed,
-          compiled: result.compiled,
-        }));
-      }
-      // Refresh stats
-      const { getWikiStats } = await import("../../services/wikiService");
-      setStats(await getWikiStats());
-    } catch (e) {
-      setCompileResult(t("wiki.compileFailed", { error: String(e) }));
-    }
-    setCompiling(false);
   };
 
   return (
@@ -1409,26 +1380,6 @@ function WikiSettingsSection() {
         </button>
       </div>
 
-      {/* Batch compile button */}
-      <div className="mt-3">
-        <button
-          onClick={handleBatchCompile}
-          disabled={compiling}
-          className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
-          style={{
-            backgroundColor: "#F9731615",
-            color: "#F97316",
-            border: "1px solid #F9731630",
-          }}
-        >
-          {compiling ? t("wiki.compiling") : t("wiki.batchCompile")}
-        </button>
-        {compileResult && (
-          <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
-            {compileResult}
-          </p>
-        )}
-      </div>
     </div>
   );
 }

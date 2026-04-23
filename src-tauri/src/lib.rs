@@ -256,7 +256,6 @@ pub fn run() {
             commands::wiki::delete_wiki_page,
             commands::wiki::get_wiki_graph,
             commands::wiki::compile_content_to_wiki,
-            commands::wiki::trigger_wiki_auto_compile,
             commands::wiki::wiki_ask,
             commands::wiki::get_chat_sessions,
             commands::wiki::get_chat_messages,
