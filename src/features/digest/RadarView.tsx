@@ -59,6 +59,8 @@ function RadarViewInner() {
     status,
     analysis,
     report,
+    windowStart,
+    windowEnd,
     hasNewContent,
     errorMessage,
     isLoading,
@@ -66,6 +68,18 @@ function RadarViewInner() {
     triggerAnalysis,
     setupEventListener,
   } = useRadarStore();
+
+  const formatDate = (iso: string | null): string | null => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const rangeStart = formatDate(windowStart);
+  const rangeEnd = formatDate(windowEnd);
 
   useEffect(() => {
     loadRadar();
@@ -110,9 +124,16 @@ function RadarViewInner() {
           </div>
         </div>
         {!isLoading && hasFindings && (
-          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-            {t("radar.subtitle")}
-          </p>
+          <>
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+              {t("radar.subtitle")}
+            </p>
+            {rangeStart && rangeEnd && (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 2 }}>
+                {t("radar.window", { start: rangeStart, end: rangeEnd })}
+              </p>
+            )}
+          </>
         )}
       </div>
 

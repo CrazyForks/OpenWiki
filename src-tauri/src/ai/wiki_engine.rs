@@ -114,6 +114,7 @@ async fn call_ai(
     }
 
     // API key path
+    let is_local_or_custom = provider_str == "custom" || provider_str == "ollama" || provider_str == "lmstudio";
     let provider_key = format!("ai_api_key_{}", provider_str);
     let api_key = repo
         .get_setting(&provider_key)
@@ -122,7 +123,7 @@ async fn call_ai(
         .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
         .unwrap_or_default();
 
-    if api_key.is_empty() {
+    if api_key.is_empty() && !is_local_or_custom {
         return Err("AI API Key not configured".to_string());
     }
 
@@ -132,7 +133,16 @@ async fn call_ai(
         .flatten()
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
-    let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str(&provider_str);
+    let base_url = repo
+        .get_setting("ai_custom_base_url")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str_with_base(
+        &provider_str,
+        &base_url,
+    );
     crate::ai::attention_analyzer::call_analysis_api(
         &provider,
         &api_key,
@@ -140,6 +150,7 @@ async fn call_ai(
         system_prompt,
         user_message,
         max_tokens,
+        true,
     )
     .await
 }

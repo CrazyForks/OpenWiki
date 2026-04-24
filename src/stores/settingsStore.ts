@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getSettings, updateSetting, checkXReaderStatus, type XReaderStatus } from "../services/settingsService";
 import { setAppLanguage, getSystemLanguage, initLanguageFromSettings } from "../i18n";
 
-export type AIProvider = "anthropic" | "openai" | "openrouter" | "dashscope" | "google" | "minimax";
+export type AIProvider = "anthropic" | "openai" | "openrouter" | "dashscope" | "google" | "minimax" | "ollama" | "lmstudio" | "custom";
 
 export interface AIModelOption {
   id: string;
@@ -100,6 +100,14 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "MiniMax-M2.5", label: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", label: "MiniMax M2.1" },
   ],
+  ollama: [
+    { id: "llama3.1", label: "Llama 3.1" },
+    { id: "qwen2.5", label: "Qwen 2.5" },
+    { id: "gemma2", label: "Gemma 2" },
+    { id: "mistral", label: "Mistral" },
+  ],
+  lmstudio: [],
+  custom: [],
 };
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
@@ -109,9 +117,18 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
   dashscope: "DashScope",
   google: "Google",
   minimax: "MiniMax",
+  ollama: "Ollama（本地）",
+  lmstudio: "LM Studio（本地）",
+  custom: "自定义",
 };
 
-const VALID_PROVIDERS: AIProvider[] = ["anthropic", "openai", "openrouter", "dashscope", "google", "minimax"];
+export const DEFAULT_BASE_URLS: Partial<Record<AIProvider, string>> = {
+  ollama: "http://localhost:11434/v1",
+  lmstudio: "http://localhost:1234/v1",
+  custom: "",
+};
+
+const VALID_PROVIDERS: AIProvider[] = ["anthropic", "openai", "openrouter", "dashscope", "google", "minimax", "ollama", "lmstudio", "custom"];
 
 export type CaptureMode = "auto" | "confirm";
 export type BubbleStyle = "circle" | "bar";
@@ -185,6 +202,7 @@ interface SettingsState {
   apiKey: string;
   provider: AIProvider;
   model: string;
+  customBaseUrl: string;
   theme: ThemeMode;
   languageMode: LanguageMode;
   resolvedLanguage: string;
@@ -220,6 +238,7 @@ interface SettingsState {
   setApiKey: (key: string) => void;
   setProvider: (provider: AIProvider) => void;
   setModel: (model: string) => void;
+  setCustomBaseUrl: (url: string) => void;
   setTheme: (theme: ThemeMode) => void;
   setLanguageMode: (mode: LanguageMode) => void;
   setCaptureEnabled: (enabled: boolean) => void;
@@ -243,6 +262,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   apiKey: "",
   provider: "anthropic",
   model: "claude-sonnet-4-20250514",
+  customBaseUrl: "",
   theme: "system",
   languageMode: "system" as LanguageMode,
   resolvedLanguage: getSystemLanguage(),
@@ -277,7 +297,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ? (settings.ai_provider as AIProvider)
         : "anthropic";
 
-      const model = settings.ai_model || MODELS_BY_PROVIDER[provider][0].id;
+      const defaultModel = MODELS_BY_PROVIDER[provider][0]?.id || "";
+      const model = settings.ai_model || defaultModel;
+      const customBaseUrl = settings.ai_custom_base_url || DEFAULT_BASE_URLS[provider] || "";
 
       // Load per-provider API key
       const providerKey = settings[`ai_api_key_${provider}` as keyof typeof settings] || "";
@@ -312,6 +334,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         apiKey,
         provider,
         model,
+        customBaseUrl,
         theme,
         languageMode,
         resolvedLanguage,
@@ -360,14 +383,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
 
   setProvider: async (provider) => {
-    const firstModel = MODELS_BY_PROVIDER[provider][0].id;
+    const firstModel = MODELS_BY_PROVIDER[provider][0]?.id || "";
+    const defaultBaseUrl = DEFAULT_BASE_URLS[provider] || "";
     // Load the API key for the new provider
     try {
       const settings = await getSettings();
       const providerKey = settings[`ai_api_key_${provider}` as keyof typeof settings] || "";
-      set({ provider, model: firstModel, apiKey: providerKey });
+      const savedBaseUrl = settings.ai_custom_base_url || defaultBaseUrl;
+      set({ provider, model: firstModel, apiKey: providerKey, customBaseUrl: savedBaseUrl });
     } catch {
-      set({ provider, model: firstModel, apiKey: "" });
+      set({ provider, model: firstModel, apiKey: "", customBaseUrl: defaultBaseUrl });
     }
     updateSetting("ai_provider", provider).catch((e) =>
       console.error("Failed to save provider:", e)
@@ -381,6 +406,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ model });
     updateSetting("ai_model", model).catch((e) =>
       console.error("Failed to save model:", e)
+    );
+  },
+
+  setCustomBaseUrl: (url) => {
+    set({ customBaseUrl: url });
+    updateSetting("ai_custom_base_url", url).catch((e) =>
+      console.error("Failed to save custom base url:", e)
     );
   },
 

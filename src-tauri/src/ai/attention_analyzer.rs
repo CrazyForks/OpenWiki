@@ -1,7 +1,16 @@
 use crate::storage::models::ContentForAnalysis;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+
+/// Local providers (Ollama, Custom) typically serve one request at a time.
+/// Serialize all requests to them to avoid starving/timing out concurrent calls.
+fn local_provider_gate() -> &'static Semaphore {
+    static GATE: OnceLock<Semaphore> = OnceLock::new();
+    GATE.get_or_init(|| Semaphore::new(1))
+}
 
 // ====================================================================
 // Data Types (v2: Briefing — kept for backwards compat)
@@ -535,16 +544,38 @@ pub enum AnalysisProvider {
     OpenRouter,
     DashScope,
     MiniMax,
+    Custom { base_url: String },
+    Ollama { base_url: String },
+    LmStudio { base_url: String },
 }
 
 impl AnalysisProvider {
     pub fn from_str(s: &str) -> Self {
+        Self::from_str_with_base(s, "")
+    }
+
+    pub fn from_str_with_base(s: &str, base_url: &str) -> Self {
         match s.to_lowercase().as_str() {
             "openai" => AnalysisProvider::OpenAi,
             "openrouter" => AnalysisProvider::OpenRouter,
             "dashscope" => AnalysisProvider::DashScope,
             "minimax" => AnalysisProvider::MiniMax,
             "google" => AnalysisProvider::OpenAi, // Google only uses OAuth, not API keys; this is a fallback guard
+            "custom" => AnalysisProvider::Custom { base_url: base_url.to_string() },
+            "ollama" => AnalysisProvider::Ollama {
+                base_url: if base_url.is_empty() {
+                    "http://localhost:11434/v1".to_string()
+                } else {
+                    base_url.to_string()
+                },
+            },
+            "lmstudio" => AnalysisProvider::LmStudio {
+                base_url: if base_url.is_empty() {
+                    "http://localhost:1234/v1".to_string()
+                } else {
+                    base_url.to_string()
+                },
+            },
             _ => AnalysisProvider::Anthropic,
         }
     }
@@ -588,6 +619,11 @@ struct OpenAiRequest {
     response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     enable_thinking: Option<bool>,
+    // Ollama-specific: disables <think> reasoning traces on qwen3-family models.
+    // Without this, Ollama's OpenAI-compatible endpoint lets qwen3.5 churn on
+    // a hidden reasoning chain for minutes even on trivial prompts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
 }
@@ -610,6 +646,9 @@ struct OpenAiChoice {
 
 /// Call the AI API directly to perform attention analysis.
 /// Returns the raw response text.
+/// `expect_json` hints the provider that the response must be valid JSON —
+/// Ollama uses this to enable grammar-constrained decoding via `format: "json"`,
+/// which weaker local models (e.g. qwen3.5:9b) need to avoid emitting broken JSON.
 pub async fn call_analysis_api(
     provider: &AnalysisProvider,
     api_key: &str,
@@ -617,13 +656,122 @@ pub async fn call_analysis_api(
     system_prompt: &str,
     user_message: &str,
     max_tokens: u32,
+    expect_json: bool,
 ) -> Result<String, String> {
+    // Local models (Ollama/custom) need much longer timeouts — cold-starts and
+    // slower inference on consumer hardware can push a single request past a minute.
+    let is_local_provider = matches!(
+        provider,
+        AnalysisProvider::Custom { .. }
+            | AnalysisProvider::Ollama { .. }
+            | AnalysisProvider::LmStudio { .. }
+    );
+    let timeout_secs = if is_local_provider { 900 } else { 120 };
     let http_client = Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(timeout_secs))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
+    // Serialize concurrent calls against local providers so we don't starve
+    // one another (Ollama by default only serves one request at a time).
+    let _permit = if is_local_provider {
+        Some(
+            local_provider_gate()
+                .acquire()
+                .await
+                .map_err(|e| format!("Local provider gate closed: {}", e))?,
+        )
+    } else {
+        None
+    };
+
     match provider {
+        AnalysisProvider::Ollama { base_url } => {
+            // Ollama's OpenAI-compatible /v1/chat/completions endpoint silently
+            // ignores the `think` parameter, so thinking models like qwen3.x burn
+            // the entire token budget on hidden reasoning and return empty content.
+            // The native /api/chat endpoint honors `think: false`, so we use it.
+            let host = {
+                let s = if base_url.is_empty() {
+                    "http://localhost:11434"
+                } else {
+                    base_url.as_str()
+                };
+                let mut h = s.trim_end_matches('/').to_string();
+                for suffix in ["/chat/completions", "/v1"] {
+                    if h.ends_with(suffix) {
+                        h.truncate(h.len() - suffix.len());
+                        h = h.trim_end_matches('/').to_string();
+                    }
+                }
+                h
+            };
+            let url = format!("{}/api/chat", host);
+
+            let mut messages = Vec::<serde_json::Value>::new();
+            if !system_prompt.is_empty() {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": system_prompt,
+                }));
+            }
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": user_message,
+            }));
+
+            let effective_max = max_tokens.max(8192);
+            let mut body = serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "stream": false,
+                "think": false,
+                "options": {
+                    "num_predict": effective_max as i64,
+                    "temperature": 0.5,
+                },
+            });
+            if expect_json {
+                body["format"] = serde_json::Value::String("json".to_string());
+            }
+
+            let resp = http_client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Ollama API request failed: {}", e))?;
+
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read Ollama response: {}", e))?;
+
+            if !status.is_success() {
+                return Err(format!("Ollama API error ({}): {}", status, text));
+            }
+
+            let v: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| format!("Failed to parse Ollama response: {} body: {}", e, text))?;
+            let content = v
+                .pointer("/message/content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if content.is_empty() {
+                log::warn!(
+                    "Ollama returned empty content — model={} done_reason={:?} raw_body={}",
+                    model,
+                    v.get("done_reason").and_then(|r| r.as_str()),
+                    text.chars().take(500).collect::<String>()
+                );
+            }
+
+            Ok(content)
+        }
         AnalysisProvider::Anthropic => {
             let body = AnthropicRequest {
                 model: model.to_string(),
@@ -664,15 +812,33 @@ pub async fn call_analysis_api(
                 .map(|c| c.text.clone())
                 .unwrap_or_default())
         }
-        AnalysisProvider::OpenAi | AnalysisProvider::OpenRouter | AnalysisProvider::DashScope | AnalysisProvider::MiniMax => {
-            let url = match provider {
+        AnalysisProvider::OpenAi | AnalysisProvider::OpenRouter | AnalysisProvider::DashScope | AnalysisProvider::MiniMax | AnalysisProvider::Custom { .. } | AnalysisProvider::LmStudio { .. } => {
+            let url_owned: String;
+            let url: &str = match provider {
                 AnalysisProvider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
                 AnalysisProvider::DashScope => {
                     "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
                 }
                 AnalysisProvider::MiniMax => "https://api.minimax.io/v1/chat/completions",
+                AnalysisProvider::Custom { base_url } | AnalysisProvider::LmStudio { base_url } => {
+                    if base_url.is_empty() {
+                        return Err("Custom provider requires a base URL".to_string());
+                    }
+                    let trimmed = base_url.trim_end_matches('/');
+                    url_owned = if trimmed.ends_with("/chat/completions") {
+                        trimmed.to_string()
+                    } else {
+                        format!("{}/chat/completions", trimmed)
+                    };
+                    url_owned.as_str()
+                }
                 _ => "https://api.openai.com/v1/chat/completions",
             };
+
+            let is_local = matches!(
+                provider,
+                AnalysisProvider::Custom { .. } | AnalysisProvider::LmStudio { .. }
+            );
 
             let mut messages = Vec::new();
             if !system_prompt.is_empty() {
@@ -686,8 +852,24 @@ pub async fn call_analysis_api(
                 content: user_message.to_string(),
             });
 
+            // Thinking models (qwen3, qwen3.5, deepseek-r1) burn large chunks of the
+            // token budget on their internal reasoning trace before emitting the real
+            // answer. Give local providers a much bigger ceiling so the final output
+            // doesn't get truncated.
+            let effective_max_tokens = if is_local {
+                max_tokens.max(8192)
+            } else {
+                max_tokens
+            };
+
+            // Ollama's OpenAI-compatible endpoint + thinking models can deadlock
+            // under strict json_object mode, so we keep JSON mode off for local
+            // providers and rely on our markdown-aware JSON parser.
             let response_format = match provider {
-                AnalysisProvider::OpenRouter | AnalysisProvider::DashScope => None,
+                AnalysisProvider::OpenRouter
+                | AnalysisProvider::DashScope
+                | AnalysisProvider::Custom { .. }
+                | AnalysisProvider::LmStudio { .. } => None,
                 _ => Some(ResponseFormat {
                     format_type: "json_object".to_string(),
                 }),
@@ -701,10 +883,11 @@ pub async fn call_analysis_api(
             let body = OpenAiRequest {
                 model: model.to_string(),
                 messages,
-                max_tokens,
+                max_tokens: effective_max_tokens,
                 temperature: 0.5,
                 response_format,
                 enable_thinking,
+                think: if is_local { Some(false) } else { None },
                 stream: None,
             };
 

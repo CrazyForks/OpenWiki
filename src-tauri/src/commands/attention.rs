@@ -30,9 +30,11 @@ pub fn get_attention_insights(state: State<'_, AppState>) -> Result<RadarStatus,
         .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
         .unwrap_or_default();
 
-    // OpenAI and Google can use OAuth instead of an API key
+    // OpenAI and Google can use OAuth instead of an API key;
+    // Ollama and custom local providers don't need one at all.
     let oauth_provider = provider_str_check == "openai" || provider_str_check == "google";
-    if api_key.is_empty() && !oauth_provider {
+    let is_local_or_custom = provider_str_check == "ollama" || provider_str_check == "custom" || provider_str_check == "lmstudio";
+    if api_key.is_empty() && !oauth_provider && !is_local_or_custom {
         return Ok(RadarStatus {
             status: "no_api_key".to_string(),
             insight: None,
@@ -65,14 +67,18 @@ pub fn get_attention_insights(state: State<'_, AppState>) -> Result<RadarStatus,
             has_new_content: true,
         }),
         Some(insight) => {
-            // Check if currently analyzing — but detect stale "analyzing" (>5 min = stuck)
+            // Check if currently analyzing — but detect stale "analyzing".
+            // Cloud providers are usually done within a minute; local models
+            // (Ollama/custom) can genuinely take 5–15 minutes on consumer hardware,
+            // so we use a longer threshold for them to avoid false-timeout flips.
             if insight.status == "analyzing" {
                 let analyzed_time = chrono::DateTime::parse_from_rfc3339(&insight.analyzed_at)
                     .map(|t| t.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now());
                 let elapsed_min = (chrono::Utc::now() - analyzed_time).num_minutes();
+                let stale_threshold_min: i64 = if is_local_or_custom { 15 } else { 5 };
 
-                if elapsed_min > 5 {
+                if elapsed_min > stale_threshold_min {
                     // Stuck — reset to error so user can retry
                     let _ = repo.update_insight_status(
                         insight.id,
@@ -174,8 +180,9 @@ pub async fn trigger_attention_analysis(
         .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
         .unwrap_or_default();
 
-    // Allow OpenAI/Google providers to proceed without an API key if OAuth is available
-    if api_key.is_empty() && provider_str != "openai" && provider_str != "google" {
+    // Allow OpenAI/Google/custom/ollama providers to proceed without an API key
+    let is_local_or_custom = provider_str == "custom" || provider_str == "ollama" || provider_str == "lmstudio";
+    if api_key.is_empty() && provider_str != "openai" && provider_str != "google" && !is_local_or_custom {
         return Err("Please configure an AI API Key in settings first".to_string());
     }
 
@@ -183,6 +190,8 @@ pub async fn trigger_attention_analysis(
         .get_setting("ai_model")
         .map_err(|e| format!("Failed to read AI model: {}", e))?
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+
+    let base_url = repo.get_setting("ai_custom_base_url").ok().flatten().unwrap_or_default();
 
     // 3. Get content for analysis (15 days, max 100)
     let items = repo
@@ -194,7 +203,7 @@ pub async fn trigger_attention_analysis(
     }
 
     let item_count = items.len();
-    let provider = AnalysisProvider::from_str(&provider_str);
+    let provider = AnalysisProvider::from_str_with_base(&provider_str, &base_url);
 
     // 4. Create "analyzing" record
     let now = chrono::Utc::now();
@@ -340,8 +349,9 @@ pub async fn trigger_attention_analysis(
             }
         }
 
-        // If we reach here and have no API key, report an error
-        if api_key.is_empty() {
+        // If we reach here and have no API key, report an error —
+        // unless we're on a local provider (Ollama/custom) which doesn't need one.
+        if api_key.is_empty() && !is_local_or_custom {
             log::error!("No available AI call method (no API Key, no OAuth Token)");
             let _ = repo.update_insight_status(
                 insight_id,
@@ -371,6 +381,7 @@ pub async fn trigger_attention_analysis(
                 &system_prompt,
                 &user_message,
                 8192,
+                true,
             )
             .await
         };

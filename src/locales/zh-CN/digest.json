@@ -43,6 +43,7 @@
   "radar": {
     "title": "深度洞察",
     "subtitle": "AI 深度分析你的信息收藏行为",
+    "window": "数据范围 {{start}} 至 {{end}}",
     "generating": "生成中...",
     "generate": "生成洞察报告",
     "regenerate": "重新生成",

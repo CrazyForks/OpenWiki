@@ -745,9 +745,12 @@ pub fn spawn_summary_task(
     // At least 50 characters to be worth summarizing — very short text
     // causes AI to summarize the prompt itself instead of the content
     if text.trim().len() < 50 {
+        log::info!("[SUMMARY] skip {} — text too short ({} chars)", content_id, text.trim().len());
         return;
     }
+    log::info!("[SUMMARY] spawn for {} ({} chars)", content_id, text.len());
     tauri::async_runtime::spawn(async move {
+        log::info!("[SUMMARY] task started for {}", content_id);
         let repo = crate::storage::repository::Repository::new(db.clone());
 
         // Helper: trigger wiki auto-compile after summary is saved
@@ -901,18 +904,29 @@ pub fn spawn_summary_task(
             }
         }
 
-        // API key path — skip if no key configured
-        if api_key.is_empty() {
+        // API key path — skip if no key configured (except for local/custom providers)
+        let is_local_or_custom = provider_str == "custom" || provider_str == "ollama" || provider_str == "lmstudio";
+        if api_key.is_empty() && !is_local_or_custom {
+            log::warn!("[SUMMARY] {} — no API key and not local provider (provider={})", content_id, provider_str);
             return;
         }
+        let base_url = repo.get_setting("ai_custom_base_url").ok().flatten().unwrap_or_default();
 
-        let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str(&provider_str);
+        log::info!(
+            "[SUMMARY] {} — calling provider={} model={} base_url='{}' prompt_len={}",
+            content_id, provider_str, model, base_url, prompt.len()
+        );
+
+        let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str_with_base(
+            &provider_str, &base_url,
+        );
         match crate::ai::attention_analyzer::call_analysis_api(
-            &provider, &api_key, &model, "", &prompt, 1024,
+            &provider, &api_key, &model, "", &prompt, 1024, true,
         )
         .await
         {
             Ok(raw) => {
+                log::info!("[SUMMARY] {} — response received ({} chars): {}", content_id, raw.len(), raw.chars().take(200).collect::<String>());
                 let (summary, tags, digest) = extract_summary_tags_digest(&raw);
                 if !summary.is_empty() {
                     let tags_str = tags.join(",");
@@ -925,6 +939,8 @@ pub fn spawn_summary_task(
                         tags_str,
                         summary
                     );
+                } else {
+                    log::warn!("[SUMMARY] {} — empty summary extracted from raw response", content_id);
                 }
             }
             Err(e) => {
@@ -1037,7 +1053,8 @@ pub fn spawn_clean_content_task(
             .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
             .unwrap_or_default();
 
-        if api_key.is_empty() {
+        let is_local_or_custom = provider_str == "custom" || provider_str == "ollama" || provider_str == "lmstudio";
+        if api_key.is_empty() && !is_local_or_custom {
             // Try OAuth paths
             if provider_str == "openai" {
                 if let Some(result) = crate::ai::attention_analyzer::try_codex_call(
@@ -1079,8 +1096,11 @@ pub fn spawn_clean_content_task(
             .ok()
             .flatten()
             .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        let base_url = repo.get_setting("ai_custom_base_url").ok().flatten().unwrap_or_default();
 
-        let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str(&provider_str);
+        let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str_with_base(
+            &provider_str, &base_url,
+        );
         match crate::ai::attention_analyzer::call_analysis_api(
             &provider,
             &api_key,
@@ -1088,6 +1108,7 @@ pub fn spawn_clean_content_task(
             "You extract article body from noisy webpage text. Output clean Markdown only.",
             &build_clean_prompt(&raw_text, &locale),
             4096,
+            false,
         )
         .await
         {
@@ -1215,8 +1236,10 @@ pub async fn test_ai_connection(
     provider: String,
     model: String,
     api_key: String,
+    base_url: Option<String>,
 ) -> Result<String, String> {
-    let p = crate::ai::attention_analyzer::AnalysisProvider::from_str(&provider);
+    let base = base_url.unwrap_or_default();
+    let p = crate::ai::attention_analyzer::AnalysisProvider::from_str_with_base(&provider, &base);
     crate::ai::attention_analyzer::call_analysis_api(
         &p,
         &api_key,
@@ -1224,6 +1247,7 @@ pub async fn test_ai_connection(
         "",
         "Reply with the words \"connection successful\" only, nothing else.",
         64,
+        false,
     )
     .await
 }

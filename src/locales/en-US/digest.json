@@ -43,6 +43,7 @@
   "radar": {
     "title": "Deep Insights",
     "subtitle": "AI deep analysis of your information collection behavior",
+    "window": "Data range {{start}} – {{end}}",
     "generating": "Generating...",
     "generate": "Generate Insight Report",
     "regenerate": "Regenerate",

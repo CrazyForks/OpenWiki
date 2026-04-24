@@ -13,6 +13,8 @@ interface RadarState {
   analysis: BriefingAnalysis | null;
   report: RadarReport | null;
   contentCount: number;
+  windowStart: string | null;
+  windowEnd: string | null;
   hasNewContent: boolean;
   errorMessage: string | null;
   isLoading: boolean;
@@ -27,6 +29,8 @@ export const useRadarStore = create<RadarState>((set, get) => ({
   analysis: null,
   report: null,
   contentCount: 0,
+  windowStart: null,
+  windowEnd: null,
   hasNewContent: false,
   errorMessage: null,
   isLoading: true,
@@ -63,6 +67,8 @@ export const useRadarStore = create<RadarState>((set, get) => ({
         analysis,
         report,
         contentCount: result.insight?.content_count ?? 0,
+        windowStart: result.insight?.window_start ?? null,
+        windowEnd: result.insight?.window_end ?? null,
         hasNewContent: result.has_new_content,
         errorMessage,
         isLoading: false,

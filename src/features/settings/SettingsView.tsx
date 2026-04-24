@@ -34,6 +34,7 @@ import {
   useSettingsStore,
   MODELS_BY_PROVIDER,
   PROVIDER_LABELS,
+  DEFAULT_BASE_URLS,
   type AIProvider,
   type ThemeMode,
   type BubblePosition,
@@ -69,6 +70,7 @@ export function SettingsView() {
     apiKey,
     provider,
     model,
+    customBaseUrl,
     theme,
     languageMode,
     captureEnabled,
@@ -85,6 +87,7 @@ export function SettingsView() {
     setApiKey,
     setProvider,
     setModel,
+    setCustomBaseUrl,
     setTheme,
     setLanguageMode,
     setCaptureEnabled,
@@ -115,6 +118,10 @@ export function SettingsView() {
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  // Local providers that don't require an API key (Ollama, LM Studio).
+  // Custom is separate because users sometimes put one behind an auth proxy.
+  const isLocalNoAuth = provider === "ollama" || provider === "lmstudio";
+  const showsBaseUrl = isLocalNoAuth || provider === "custom";
   // MCP connection state per target
   type McpTargetId = "claude" | "openclaw";
   interface McpTargetState {
@@ -565,19 +572,64 @@ export function SettingsView() {
             </select>
           </SettingRow>
 
+          {/* Base URL (custom / ollama / lmstudio) */}
+          {showsBaseUrl && (
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("ai.baseUrl")}</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                    {provider === "ollama"
+                      ? t("ai.baseUrlOllamaHint")
+                      : provider === "lmstudio"
+                        ? t("ai.baseUrlLmStudioHint")
+                        : t("ai.baseUrlCustomHint")}
+                  </div>
+                </div>
+              </div>
+              <input
+                type="text"
+                value={customBaseUrl}
+                onChange={(e) => setCustomBaseUrl(e.target.value)}
+                placeholder={DEFAULT_BASE_URLS[provider] || "https://..."}
+                className="w-full px-3 py-2 text-sm rounded-lg bg-white/50 dark:bg-white/[0.04] border border-gray-200/50 dark:border-white/[0.08] text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+              />
+            </div>
+          )}
+
           {/* Model */}
           <SettingRow label={t("ai.model")}>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50 max-w-[220px]"
-            >
-              {MODELS_BY_PROVIDER[provider].map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.free ? "🆓 " : ""}{m.label}
-                </option>
-              ))}
-            </select>
+            {showsBaseUrl ? (
+              <>
+                <input
+                  type="text"
+                  list={`model-suggestions-${provider}`}
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={provider === "ollama" ? "llama3.1" : provider === "lmstudio" ? "qwen2.5-7b-instruct" : "model name"}
+                  className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50 w-[220px]"
+                />
+                {MODELS_BY_PROVIDER[provider].length > 0 && (
+                  <datalist id={`model-suggestions-${provider}`}>
+                    {MODELS_BY_PROVIDER[provider].map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </datalist>
+                )}
+              </>
+            ) : (
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50 max-w-[220px]"
+              >
+                {MODELS_BY_PROVIDER[provider].map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.free ? "🆓 " : ""}{m.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </SettingRow>
 
           {/* OpenAI OAuth Login */}
@@ -667,14 +719,19 @@ export function SettingsView() {
             </div>
           )}
 
-          {/* API Key */}
+          {/* API Key / Connection */}
           <div className="p-4">
+            {!isLocalNoAuth && (
             <div className="flex items-center justify-between mb-2">
               <div>
                 <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("ai.apiKey")}</div>
-                <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{t("ai.apiKeyDesc")}</div>
+                <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                  {provider === "custom" ? t("ai.apiKeyOptionalDesc") : t("ai.apiKeyDesc")}
+                </div>
               </div>
             </div>
+            )}
+            {!isLocalNoAuth && (
             <div className="flex gap-2">
               <input
                 type={showApiKey ? "text" : "password"}
@@ -694,7 +751,12 @@ export function SettingsView() {
                 {showApiKey ? t("ai.apiKeyHide") : t("ai.apiKeyShow")}
               </button>
             </div>
-            <div className="flex gap-2 mt-2">
+            )}
+            {isLocalNoAuth && (
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("ai.ollamaConnectionTitle")}</div>
+            )}
+            <div className={`flex gap-2 ${!isLocalNoAuth ? "mt-2" : ""}`}>
+              {!isLocalNoAuth && (
               <button
                 onClick={() => {
                   const key = draftApiKey ?? apiKey;
@@ -710,10 +772,11 @@ export function SettingsView() {
               >
                 {apiKeySaved ? t("ai.apiKeySaved") : t("ai.apiKeySave")}
               </button>
+              )}
               <button
                 onClick={async () => {
                   const key = draftApiKey ?? apiKey;
-                  if (!key) return;
+                  if (!key && !isLocalNoAuth && provider !== "custom") return;
                   // Save first if draft exists
                   if (draftApiKey !== null && draftApiKey !== apiKey) {
                     setApiKey(draftApiKey);
@@ -723,7 +786,7 @@ export function SettingsView() {
                   setTestMessage("");
                   try {
                     const result = await invoke<string>("test_ai_connection", {
-                      provider, model, apiKey: key,
+                      provider, model, apiKey: key, baseUrl: customBaseUrl,
                     });
                     setTestStatus("success");
                     setTestMessage(result);
@@ -732,7 +795,7 @@ export function SettingsView() {
                     setTestMessage(typeof e === "string" ? e : String(e));
                   }
                 }}
-                disabled={!(draftApiKey ?? apiKey) || testStatus === "testing"}
+                disabled={(!(draftApiKey ?? apiKey) && !isLocalNoAuth && provider !== "custom") || testStatus === "testing"}
                 className="px-4 py-1.5 text-xs font-medium rounded-lg border transition-colors
                   disabled:opacity-30 disabled:cursor-default
                   bg-white/50 dark:bg-white/[0.04] border-gray-200/50 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
