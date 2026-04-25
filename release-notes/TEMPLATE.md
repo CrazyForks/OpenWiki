@@ -1,16 +1,8 @@
-## ✨ 本次更新 / What's New
-
-- 优化了 XXX
-- 修复了 XXX
-- 新增 XXX
-
----
+## ✨ What's New
 
 - Improved XXX
 - Fixed XXX
 - Added XXX
-
----
 
 ## Installation (macOS)
 
@@ -25,6 +17,12 @@
 5. Go to **Settings → AI** to configure your AI provider (Claude / OpenAI / Gemini).
 
 ---
+
+## ✨ 本次更新
+
+- 优化了 XXX
+- 修复了 XXX
+- 新增 XXX
 
 ## 安装说明（macOS）
 
