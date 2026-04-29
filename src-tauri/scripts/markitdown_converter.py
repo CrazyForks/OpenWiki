@@ -9,7 +9,7 @@ def main() -> int:
         print("Usage: openwiki-markitdown <file>", file=sys.stderr)
         return 2
 
-    result = MarkItDown(enable_plugins=False).convert(sys.argv[1])
+    result = MarkItDown().convert(sys.argv[1])
     text = (result.text_content or "").strip()
     if not text:
         print("Converted document is empty", file=sys.stderr)
