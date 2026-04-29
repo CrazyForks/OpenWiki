@@ -2,9 +2,13 @@
   "banner": {
     "title": "OpenWiki {{version}} 已发布",
     "subtitle": "当前版本 {{current}}",
-    "view": "查看更新",
+    "install": "立即升级",
+    "downloading": "下载中…",
+    "installing": "安装中…",
+    "view": "查看更新内容",
     "later": "稍后",
-    "close": "关闭"
+    "close": "关闭",
+    "failed": "升级失败：{{error}}"
   },
   "settings": {
     "sectionTitle": "软件更新",

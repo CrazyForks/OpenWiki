@@ -1,6 +1,6 @@
 [package]
 name = "openwiki"
-version = "0.3.3"
+version = "0.3.4"
 description = "OpenWiki - Mac 桌面 AI 知识管理工具"
 authors = ["openwiki"]
 license = "MIT"
@@ -41,6 +41,7 @@ base64 = "0.22"
 open = "5"
 dispatch = "0.2"
 window-vibrancy = "0.5"
+tauri-plugin-updater = "2.10.1"
 
 [dev-dependencies]
 tempfile = "3"

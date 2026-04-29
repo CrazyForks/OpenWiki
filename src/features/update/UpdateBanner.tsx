@@ -1,33 +1,37 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { useTranslation } from "react-i18next";
-import { Sparkles, X } from "lucide-react";
+import { Sparkles, X, Loader2 } from "lucide-react";
 import {
   dismissUpdateVersion,
   type UpdateInfo,
 } from "../../services/updateService";
 
+type InstallState = "idle" | "downloading" | "installing" | "failed";
+
 /**
  * Top-of-main-window banner announcing a newer OpenWiki version.
  *
- * Listens for the `update-available` Tauri event which is emitted by the
- * background check in `src-tauri/src/update/mod.rs`. Also re-renders when
- * `window.dispatchEvent(new CustomEvent("update-available-manual", ...))` is
- * fired by the Settings "Check now" button.
+ * Notification source is the existing GitHub-Releases polling backend
+ * (`src-tauri/src/update/mod.rs`). When the user clicks "立即升级", we
+ * hand off to `tauri-plugin-updater` which downloads the signed bundle,
+ * verifies it against the embedded public key, installs it, and relaunches
+ * — same one-click flow as Slack / Linear / VS Code.
  */
 export function UpdateBanner() {
   const { t } = useTranslation("update");
   const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [installState, setInstallState] = useState<InstallState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   useEffect(() => {
-    // Tauri backend event (fired by spawn_background_check on startup)
     const unlisten = listen<UpdateInfo>("update-available", (event) => {
       setInfo(event.payload);
     });
 
-    // Manual trigger from the Settings "Check now" button — the Settings
-    // view already has the payload, it just asks the banner to show.
     const manualHandler = (e: Event) => {
       const ce = e as CustomEvent<UpdateInfo>;
       if (ce.detail) setInfo(ce.detail);
@@ -42,7 +46,30 @@ export function UpdateBanner() {
 
   if (!info) return null;
 
-  const handleView = async () => {
+  const handleInstall = async () => {
+    setInstallState("downloading");
+    setErrorMsg("");
+    try {
+      const update = await check();
+      if (!update) {
+        setInstallState("failed");
+        setErrorMsg("No update found");
+        return;
+      }
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Finished") {
+          setInstallState("installing");
+        }
+      });
+      await relaunch();
+    } catch (err) {
+      console.error("[update] downloadAndInstall failed:", err);
+      setInstallState("failed");
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleViewNotes = async () => {
     try {
       await openExternal(info.url);
     } catch (err) {
@@ -58,6 +85,16 @@ export function UpdateBanner() {
     }
     setInfo(null);
   };
+
+  const installLabel =
+    installState === "downloading"
+      ? t("banner.downloading")
+      : installState === "installing"
+      ? t("banner.installing")
+      : t("banner.install");
+
+  const isWorking =
+    installState === "downloading" || installState === "installing";
 
   return (
     <div
@@ -75,26 +112,32 @@ export function UpdateBanner() {
             {t("banner.title", { version: info.version })}
           </div>
           <div className="text-[11px] text-gray-500 dark:text-orange-200/70 truncate">
-            {t("banner.subtitle", { current: info.current_version })}
+            {installState === "failed"
+              ? t("banner.failed", { error: errorMsg })
+              : t("banner.subtitle", { current: info.current_version })}
           </div>
         </div>
 
         <button
-          onClick={handleView}
+          onClick={handleInstall}
+          disabled={isWorking}
           className="flex-shrink-0 px-3 py-1 text-[12px] font-medium rounded-md
                      bg-orange-500 text-white hover:bg-orange-600
-                     transition-colors shadow-sm"
+                     disabled:opacity-70 disabled:cursor-wait
+                     transition-colors shadow-sm
+                     flex items-center gap-1.5"
         >
-          {t("banner.view")}
+          {isWorking && <Loader2 className="w-3 h-3 animate-spin" />}
+          {installLabel}
         </button>
 
         <button
-          onClick={handleLater}
+          onClick={handleViewNotes}
           className="flex-shrink-0 px-3 py-1 text-[12px] font-medium rounded-md
                      text-orange-700 dark:text-orange-200 hover:bg-orange-100/60
                      dark:hover:bg-orange-500/[0.15] transition-colors"
         >
-          {t("banner.later")}
+          {t("banner.view")}
         </button>
 
         <button

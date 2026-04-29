@@ -2,9 +2,13 @@
   "banner": {
     "title": "OpenWiki {{version}} is available",
     "subtitle": "Current version {{current}}",
-    "view": "View update",
+    "install": "Update now",
+    "downloading": "Downloading…",
+    "installing": "Installing…",
+    "view": "Release notes",
     "later": "Later",
-    "close": "Close"
+    "close": "Close",
+    "failed": "Update failed: {{error}}"
   },
   "settings": {
     "sectionTitle": "App updates",
