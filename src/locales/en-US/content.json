@@ -3,6 +3,7 @@
   "filter": {
     "all": "All",
     "text": "Text",
+    "document": "Imported",
     "image": "Image",
     "url": "Link"
   },
@@ -60,6 +61,20 @@
     "exporting": "Exporting...",
     "done": "Exported",
     "button": "Export"
+  },
+  "import": {
+    "button": "Import Content",
+    "choosing": "Choosing file...",
+    "importing": "Importing...",
+    "done": "Imported {{imported}}, skipped {{skipped}}, failed {{failed}}",
+    "failed": "Import failed",
+    "failedWithReason": "Import failed: {{reason}}",
+    "onlyMarkdown": "Choose Markdown files",
+    "unsupported": "Choose Markdown, TXT, image, PDF, DOCX, or PPTX files",
+    "panelTitle": "Supported Formats",
+    "supportedLabel": "Supported",
+    "futureLabel": "Later",
+    "chooseButton": "Choose Files"
   },
   "capture": {
     "active": "Capturing",

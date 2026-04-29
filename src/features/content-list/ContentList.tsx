@@ -1,8 +1,23 @@
-import { useEffect, useCallback, useState, useMemo, useRef } from "react";
+import {
+  useEffect,
+  useCallback,
+  useState,
+  useMemo,
+  useRef,
+  type ChangeEvent,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
+import { FileText, Image as ImageIcon, Import } from "lucide-react";
 import { useContentStore } from "../../stores/contentStore";
-import { getAllContent, getStorageInfo, getContentsByIds } from "../../services/storageService";
+import {
+  getAllContent,
+  getStorageInfo,
+  getContentsByIds,
+  importContentFiles,
+  type ContentImportEntry,
+  type ContentImportKind,
+} from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
 import { ContentCard } from "./ContentCard";
@@ -10,13 +25,79 @@ import type { ContentType } from "../../types/content";
 
 type FilterType = "all" | ContentType;
 type DateRange = "all" | "today" | "week" | "half-month";
+type ContentFilter = FilterType | "document";
 
-const FILTER_TABS: { value: FilterType; labelKey: string; icon: string }[] = [
+const FILTER_TABS: { value: ContentFilter; labelKey: string; icon: string }[] = [
   { value: "all", labelKey: "filter.all", icon: "📋" },
   { value: "text", labelKey: "filter.text", icon: "📝" },
   { value: "image", labelKey: "filter.image", icon: "🖼️" },
   { value: "url", labelKey: "filter.url", icon: "🔗" },
+  { value: "document", labelKey: "filter.document", icon: "📥" },
 ];
+
+const IMPORT_ACCEPT = [
+  ".md",
+  ".markdown",
+  ".txt",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".pdf",
+  ".docx",
+  ".pptx",
+  "text/markdown",
+  "text/x-markdown",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+].join(",");
+
+const IMPORT_SOURCE_APPS = new Set(["Markdown 导入", "导入内容"]);
+const SUPPORTED_IMPORT_FORMATS = ["Markdown", "TXT", "PNG", "JPG", "WebP", "GIF", "PDF", "DOCX", "PPTX"];
+const FUTURE_IMPORT_FORMATS = ["DOC", "PPT"];
+
+const isImportedDocument = (content: { source_app: string }) =>
+  IMPORT_SOURCE_APPS.has(content.source_app);
+
+const getImportKind = (file: File): ContentImportKind | null => {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
+  if (name.endsWith(".txt")) return "text";
+  if (name.endsWith(".pdf") || name.endsWith(".docx") || name.endsWith(".pptx")) return "document";
+  if (
+    file.type.startsWith("image/") ||
+    name.endsWith(".png") ||
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".webp") ||
+    name.endsWith(".gif")
+  ) {
+    return "image";
+  }
+  return null;
+};
+
+const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = typeof reader.result === "string" ? reader.result : "";
+    const data = result.includes(",") ? result.split(",")[1] : result;
+    if (data) {
+      resolve(data);
+    } else {
+      reject(new Error("Empty file data"));
+    }
+  };
+  reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+  reader.readAsDataURL(file);
+});
 
 const PAGE_SIZE = 50;
 
@@ -34,13 +115,20 @@ export function ContentList() {
   const scrollToId = useContentStore((s) => s.scrollToId);
   const setScrollToId = useContentStore((s) => s.setScrollToId);
   const clearHighlights = useContentStore((s) => s.clearHighlights);
+  const setHighlightedIds = useContentStore((s) => s.setHighlightedIds);
   const captureEnabled = useSettingsStore((s) => s.captureEnabled);
   const sensitiveFilterEnabled = useSettingsStore((s) => s.sensitiveFilterEnabled);
   const setStorageInfo = useSettingsStore((s) => s.setStorageInfo);
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filter, setFilter] = useState<ContentFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
+  const [importStatus, setImportStatus] = useState<"idle" | "picking" | "importing" | "done" | "error">("idle");
+  const [importMessage, setImportMessage] = useState("");
+  const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importPickerOpenRef = useRef(false);
+  const importPanelRef = useRef<HTMLDivElement>(null);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -83,6 +171,135 @@ export function ContentList() {
     loadInitial();
   }, [loadInitial]);
 
+  const openImportPanel = useCallback(() => {
+    setIsImportPanelOpen((open) => !open);
+  }, []);
+
+  const handleChooseFiles = useCallback(() => {
+    if (!importInputRef.current) {
+      setImportStatus("error");
+      setImportMessage(t("import.failed"));
+      setTimeout(() => setImportStatus("idle"), 3000);
+      return;
+    }
+    importPickerOpenRef.current = true;
+    setImportStatus("picking");
+    setImportMessage(t("import.choosing"));
+    importInputRef.current.click();
+  }, [t]);
+
+  const importFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) {
+      setImportStatus("idle");
+      setImportMessage("");
+      return;
+    }
+
+    const supportedFiles = files
+      .map((file) => ({ file, kind: getImportKind(file) }))
+      .filter((item): item is { file: File; kind: ContentImportKind } => item.kind !== null);
+
+    if (supportedFiles.length === 0) {
+      setImportStatus("error");
+      setImportMessage(t("import.unsupported"));
+      setTimeout(() => setImportStatus("idle"), 3000);
+      return;
+    }
+
+    setImportStatus("importing");
+    setImportMessage(t("import.importing"));
+    setIsImportPanelOpen(false);
+    try {
+      const entries = await Promise.all(
+        supportedFiles.map(async ({ file, kind }): Promise<ContentImportEntry> => {
+          if (kind === "image" || kind === "document") {
+            return {
+              file_name: file.name,
+              kind,
+              data_base64: await readFileAsBase64(file),
+            };
+          }
+          return {
+            file_name: file.name,
+            kind,
+            text: await file.text(),
+          };
+        })
+      );
+      const result = await importContentFiles(entries);
+      await loadInitial();
+
+      const importedIds = result.imported.map((item) => item.id);
+      if (importedIds.length > 0) {
+        setHighlightedIds(importedIds);
+      }
+
+      const skipped = result.skipped_duplicates + result.skipped_invalid;
+      if (result.imported.length === 0 && result.failed.length > 0) {
+        setImportStatus("error");
+        setImportMessage(t("import.failedWithReason", { reason: result.failed[0] }));
+      } else {
+        setImportStatus("done");
+        setImportMessage(t("import.done", {
+          imported: result.imported.length,
+          skipped,
+          failed: result.failed.length,
+        }));
+      }
+      setTimeout(() => setImportStatus("idle"), 4000);
+    } catch (e) {
+      console.error("Failed to import content:", e);
+      setImportStatus("error");
+      setImportMessage(t("import.failed"));
+      setTimeout(() => setImportStatus("idle"), 4000);
+    }
+  }, [loadInitial, setHighlightedIds, t]);
+
+  const handleContentImport = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    importPickerOpenRef.current = false;
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    await importFiles(files);
+  }, [importFiles]);
+
+  useEffect(() => {
+    if (!isImportPanelOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!importPanelRef.current?.contains(event.target as Node)) {
+        setIsImportPanelOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsImportPanelOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isImportPanelOpen]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (importPickerOpenRef.current) {
+        setTimeout(() => {
+          if (importPickerOpenRef.current) {
+            importPickerOpenRef.current = false;
+            setImportStatus("idle");
+            setImportMessage("");
+          }
+        }, 1200);
+        return;
+      }
+      loadInitial();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => { window.removeEventListener("focus", handleFocus); };
+  }, [loadInitial]);
+
   // Scroll listener: trigger loadMore when near bottom of scroll container
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -95,12 +312,6 @@ export function ContentList() {
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
   }, [hasMore, loadMore]);
-
-  useEffect(() => {
-    const handleFocus = () => { loadInitial(); };
-    window.addEventListener("focus", handleFocus);
-    return () => { window.removeEventListener("focus", handleFocus); };
-  }, [loadInitial]);
 
   // Listen for content updates — reload single item instead of full list
   const reloadSingleItem = useCallback(async (id: string) => {
@@ -178,8 +389,10 @@ export function ContentList() {
     if (sensitiveFilterEnabled) {
       result = result.filter((c) => !c.raw_text || !containsSensitiveData(c.raw_text));
     }
-    if (filter !== "all") {
-      result = result.filter((c) => c.content_type === filter);
+    if (filter === "document") {
+      result = result.filter(isImportedDocument);
+    } else if (filter !== "all") {
+      result = result.filter((c) => c.content_type === filter && !isImportedDocument(c));
     }
     if (dateRange !== "all") {
       const now = new Date();
@@ -199,10 +412,78 @@ export function ContentList() {
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = { all: totalCount };
     for (const c of contents) {
-      counts[c.content_type] = (counts[c.content_type] || 0) + 1;
+      if (isImportedDocument(c)) {
+        counts.document = (counts.document || 0) + 1;
+      } else {
+        counts[c.content_type] = (counts[c.content_type] || 0) + 1;
+      }
     }
     return counts;
   }, [contents, totalCount]);
+
+  const renderImportPanel = (align: "center" | "right") => {
+    if (!isImportPanelOpen) return null;
+    return (
+      <div
+        className={`absolute top-full mt-2 z-50 w-72 rounded-xl border border-stone-200/80 bg-white p-3 shadow-xl shadow-stone-950/10 dark:border-white/[0.08] dark:bg-stone-950 dark:shadow-black/30 ${
+          align === "center" ? "left-1/2 -translate-x-1/2" : "right-0"
+        }`}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-stone-800 dark:text-stone-100">
+            <Import size={16} className="text-orange-500" />
+            {t("import.panelTitle")}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-stone-500 dark:text-stone-400">
+              <FileText size={13} />
+              {t("import.supportedLabel")}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {SUPPORTED_IMPORT_FORMATS.map((format) => (
+                <span
+                  key={format}
+                  className="rounded-md border border-orange-500/20 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-600 dark:border-orange-400/20 dark:bg-orange-500/10 dark:text-orange-300"
+                >
+                  {format}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-stone-400 dark:text-stone-500">
+              <ImageIcon size={13} />
+              {t("import.futureLabel")}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {FUTURE_IMPORT_FORMATS.map((format) => (
+                <span
+                  key={format}
+                  className="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-400 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-stone-500"
+                >
+                  {format}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleChooseFiles}
+          disabled={importStatus === "picking" || importStatus === "importing"}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-orange-500 bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-all hover:bg-orange-600 disabled:opacity-60"
+        >
+          <Import size={16} />
+          {importStatus === "picking" ? t("import.choosing") : importStatus === "importing" ? t("import.importing") : t("import.chooseButton")}
+        </button>
+      </div>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -230,6 +511,14 @@ export function ContentList() {
   if (contents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-80">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept={IMPORT_ACCEPT}
+          multiple
+          className="hidden"
+          onChange={handleContentImport}
+        />
         <div className="w-20 h-20 rounded-2xl glass flex items-center justify-center mb-5">
           <span className="text-4xl">📭</span>
         </div>
@@ -239,6 +528,27 @@ export function ContentList() {
         <div className="text-sm text-gray-400 dark:text-slate-500 text-center max-w-xs">
           {t("emptyHint")}
         </div>
+        <div ref={importPanelRef} className="relative mt-5">
+          <button
+            onClick={openImportPanel}
+            disabled={importStatus === "importing"}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all border disabled:opacity-60"
+            style={{
+              color: "#F97316",
+              backgroundColor: "#FFF7ED",
+              borderColor: "#F9731630",
+            }}
+          >
+            <Import size={16} />
+            {importStatus === "importing" ? t("import.importing") : t("import.button")}
+          </button>
+          {renderImportPanel("center")}
+        </div>
+        {importStatus !== "idle" && importMessage && (
+          <div className={`mt-2 text-xs ${importStatus === "error" ? "text-red-500" : "text-stone-400 dark:text-stone-500"}`}>
+            {importMessage}
+          </div>
+        )}
         <div className="mt-4 flex items-center gap-1.5 text-xs">
           <span className={`w-2 h-2 rounded-full ${captureEnabled ? "bg-green-400 animate-pulse" : "bg-gray-300 dark:bg-slate-600"}`} />
           <span className="text-gray-400 dark:text-slate-500">
@@ -251,6 +561,14 @@ export function ContentList() {
 
   return (
     <div ref={scrollContainerRef} className="overflow-y-auto p-4 space-y-3" style={{ height: "calc(100vh - 44px)" }}>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept={IMPORT_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={handleContentImport}
+      />
       {/* Header with filter tabs */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-1 p-0.5 rounded-xl glass">
@@ -309,6 +627,26 @@ export function ContentList() {
           {/* Separator */}
           <div className="w-px h-4 bg-gray-200/60 dark:bg-white/[0.08] mx-0.5" />
 
+          <div ref={importPanelRef} className="relative">
+            <button
+              onClick={openImportPanel}
+              disabled={importStatus === "importing"}
+              className={`text-[11px] px-2.5 py-1 rounded-md border transition-all flex items-center gap-1 disabled:opacity-60
+                ${importStatus === "done"
+                  ? "text-green-600 border-green-300 bg-green-50"
+                  : importStatus === "error"
+                  ? "text-red-500 border-red-200 bg-red-50 dark:bg-red-500/10"
+                  : importStatus === "importing"
+                  ? "text-orange-500 border-orange-300 bg-orange-50 animate-pulse"
+                  : "text-gray-400 dark:text-slate-500 border-gray-200/60 dark:border-white/[0.08] bg-white/60 dark:bg-white/[0.04] hover:border-orange-300 hover:text-orange-500"
+                }`}
+            >
+              <Import size={13} />
+              {importStatus === "importing" ? t("import.importing") : t("import.button")}
+            </button>
+            {renderImportPanel("right")}
+          </div>
+
           {/* Export current view */}
           <button
             onClick={async () => {
@@ -360,6 +698,12 @@ export function ContentList() {
           </div>
         </div>
       </div>
+
+      {importStatus !== "idle" && importMessage && (
+        <div className={`px-1 text-xs ${importStatus === "error" ? "text-red-500" : "text-stone-400 dark:text-stone-500"}`}>
+          {importMessage}
+        </div>
+      )}
 
       {/* Content cards */}
       {filteredContents.length === 0 ? (

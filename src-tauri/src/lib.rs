@@ -204,6 +204,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::capture::save_captured_content,
             commands::capture::save_spotlight_content,
+            commands::capture::import_markdown_files,
+            commands::capture::import_content_files,
             commands::capture::confirm_capture,
             commands::capture::dismiss_capture,
             commands::capture::get_pending_capture,

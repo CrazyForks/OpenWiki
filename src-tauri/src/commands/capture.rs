@@ -2,6 +2,7 @@ use crate::capture::content::{compute_hash, detect_url};
 use crate::storage::database::Database;
 use crate::storage::models::{CaptureEvent, CapturedContent, ContentType};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -19,6 +20,36 @@ pub struct AppState {
     pub pending_capture: Arc<Mutex<Option<serde_json::Value>>>,
     /// Temporarily suppresses macOS Reopen from pulling the main window forward.
     pub suppress_reopen_until: Arc<Mutex<Option<Instant>>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkdownImportEntry {
+    pub file_name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MarkdownImportResult {
+    pub imported: Vec<CapturedContent>,
+    pub skipped_duplicates: usize,
+    pub skipped_invalid: usize,
+    pub failed: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ContentImportEntry {
+    pub file_name: String,
+    pub kind: String,
+    pub text: Option<String>,
+    pub data_base64: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContentImportResult {
+    pub imported: Vec<CapturedContent>,
+    pub skipped_duplicates: usize,
+    pub skipped_invalid: usize,
+    pub failed: Vec<String>,
 }
 
 /// Get the captures directory, creating it if necessary.
@@ -45,6 +76,240 @@ fn get_thumbnails_dir() -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create thumbnails directory: {}", e))?;
 
     Ok(thumbnails_dir)
+}
+
+fn is_markdown_file(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
+
+fn is_text_file(file_name: &str) -> bool {
+    file_name.to_lowercase().ends_with(".txt")
+}
+
+fn is_supported_image_file(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".gif")
+}
+
+fn is_supported_document_file(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    lower.ends_with(".pdf") || lower.ends_with(".docx") || lower.ends_with(".pptx")
+}
+
+fn title_from_markdown_filename(file_name: &str) -> String {
+    Path::new(file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Imported Markdown")
+        .to_string()
+}
+
+fn title_from_filename(file_name: &str, fallback: &str) -> String {
+    Path::new(file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn markdown_has_h1(content: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("# ") && trimmed.trim_start_matches('#').trim().len() > 0
+    })
+}
+
+fn normalize_imported_markdown(file_name: &str, content: &str) -> Option<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if markdown_has_h1(trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        Some(format!(
+            "# {}\n\n{}",
+            title_from_markdown_filename(file_name),
+            trimmed
+        ))
+    }
+}
+
+fn normalize_imported_text(file_name: &str, content: &str) -> Option<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "# {}\n\n{}",
+        title_from_filename(file_name, "Imported Text"),
+        trimmed
+    ))
+}
+
+fn safe_import_extension(file_name: &str) -> String {
+    Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
+        .unwrap_or_else(|| "png".to_string())
+}
+
+fn safe_document_extension(file_name: &str) -> String {
+    Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| matches!(e.as_str(), "pdf" | "docx" | "pptx"))
+        .unwrap_or_else(|| "pdf".to_string())
+}
+
+fn write_imported_image_temp(file_name: &str, data_base64: &str) -> Result<PathBuf, String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|e| format!("Invalid image data: {}", e))?;
+
+    if bytes.is_empty() {
+        return Err("Image file is empty".to_string());
+    }
+
+    image::load_from_memory(&bytes).map_err(|e| format!("Unsupported image file: {}", e))?;
+
+    let temp_dir = std::env::temp_dir().join("openwiki-imports");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create import temp directory: {}", e))?;
+
+    let temp_path = temp_dir.join(format!(
+        "{}.{}",
+        uuid::Uuid::new_v4(),
+        safe_import_extension(file_name)
+    ));
+    std::fs::write(&temp_path, bytes)
+        .map_err(|e| format!("Failed to write imported image: {}", e))?;
+
+    Ok(temp_path)
+}
+
+fn write_imported_document_temp(file_name: &str, data_base64: &str) -> Result<PathBuf, String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|e| format!("Invalid document data: {}", e))?;
+
+    if bytes.is_empty() {
+        return Err("Document file is empty".to_string());
+    }
+
+    let temp_dir = std::env::temp_dir().join("openwiki-imports");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create import temp directory: {}", e))?;
+
+    let temp_path = temp_dir.join(format!(
+        "{}.{}",
+        uuid::Uuid::new_v4(),
+        safe_document_extension(file_name)
+    ));
+    std::fs::write(&temp_path, bytes)
+        .map_err(|e| format!("Failed to write imported document: {}", e))?;
+
+    Ok(temp_path)
+}
+
+fn command_exists(command: &str) -> bool {
+    std::process::Command::new(command)
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn markitdown_command_candidates() -> Vec<(String, Vec<String>)> {
+    let mut candidates = Vec::new();
+
+    if let Ok(path) = std::env::var("OPENWIKI_MARKITDOWN_BIN") {
+        if !path.trim().is_empty() {
+            candidates.push((path, Vec::new()));
+        }
+    }
+
+    for path in [
+        "markitdown",
+        "/opt/homebrew/bin/markitdown",
+        "/usr/local/bin/markitdown",
+    ] {
+        candidates.push((path.to_string(), Vec::new()));
+    }
+
+    for python in [
+        "python3",
+        "python",
+        "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3",
+    ] {
+        candidates.push((python.to_string(), vec!["-m".to_string(), "markitdown".to_string()]));
+    }
+
+    candidates
+}
+
+fn convert_document_with_markitdown(path: &Path) -> Result<String, String> {
+    let file_arg = path.to_string_lossy().to_string();
+    let mut attempted = Vec::new();
+
+    for (command, mut args) in markitdown_command_candidates() {
+        if !Path::new(&command).exists() && !command_exists(&command) {
+            attempted.push(command);
+            continue;
+        }
+
+        args.push(file_arg.clone());
+        let output = std::process::Command::new(&command)
+            .args(&args)
+            .output()
+            .map_err(|e| format!("Failed to run MarkItDown: {}", e))?;
+
+        if output.status.success() {
+            let markdown = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if markdown.is_empty() {
+                return Err("文档转换后没有提取到文字".to_string());
+            }
+            return Ok(markdown);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if !stderr.contains("No module named markitdown")
+            && !stderr.contains("No module named 'markitdown'")
+        {
+            return Err(format!(
+                "MarkItDown 转换失败{}",
+                if stderr.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(": {}", stderr)
+                }
+            ));
+        }
+
+        attempted.push(format!("{} {}", command, args.join(" ")));
+    }
+
+    Err(format!(
+        "缺少文档转换器 MarkItDown，暂时无法导入 PDF/Word/PPT。尝试过：{}",
+        attempted.join(", ")
+    ))
 }
 
 /// Copy a source image to the captures directory and return the new path.
@@ -164,16 +429,21 @@ pub fn save_content_auto(
         (image_path, None)
     };
 
-    // For hash computation, use detected_url (trimmed) for URL content to ensure consistent dedup
-    let hash_data = if let Some(ref path) = final_image_path {
-        let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        format!("img:{}:{}", path, file_size)
+    // For hash computation, use actual image bytes and normalized URLs so
+    // duplicate imports are detected even when the copied file path changes.
+    let content_hash = if let Some(ref path) = final_image_path {
+        match std::fs::read(path) {
+            Ok(bytes) => compute_hash(&bytes),
+            Err(_) => {
+                let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                compute_hash(format!("img:{}:{}", path, file_size).as_bytes())
+            }
+        }
     } else if let Some(ref url) = detected_url {
-        url.clone()
+        compute_hash(url.as_bytes())
     } else {
-        raw_text.as_deref().unwrap_or("").to_string()
+        compute_hash(raw_text.as_deref().unwrap_or("").as_bytes())
     };
-    let content_hash = compute_hash(hash_data.as_bytes());
 
     let byte_size = if let Some(ref path) = final_image_path {
         std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0)
@@ -336,6 +606,290 @@ pub fn save_spotlight_content(
     }
 
     Ok(content)
+}
+
+#[tauri::command]
+pub fn import_markdown_files(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    entries: Vec<MarkdownImportEntry>,
+) -> Result<MarkdownImportResult, String> {
+    let mut result = MarkdownImportResult {
+        imported: Vec::new(),
+        skipped_duplicates: 0,
+        skipped_invalid: 0,
+        failed: Vec::new(),
+    };
+
+    for entry in entries {
+        if !is_markdown_file(&entry.file_name) {
+            result.skipped_invalid += 1;
+            continue;
+        }
+
+        let Some(markdown) = normalize_imported_markdown(&entry.file_name, &entry.content) else {
+            result.skipped_invalid += 1;
+            continue;
+        };
+
+        let event = CaptureEvent {
+            content_type: "text".to_string(),
+            preview: markdown.chars().take(100).collect(),
+            source_app: "Markdown 导入".to_string(),
+            raw_text: Some(markdown.clone()),
+            image_path: None,
+        };
+
+        match save_content_auto(&state.db, event) {
+            Ok(content) => {
+                spawn_summary_task(state.db.clone(), app.clone(), content.id.clone(), markdown);
+                result.imported.push(content);
+            }
+            Err(e) if e.contains("Duplicate content") => {
+                result.skipped_duplicates += 1;
+            }
+            Err(e) => {
+                result.failed.push(format!("{}: {}", entry.file_name, e));
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn import_content_files(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    entries: Vec<ContentImportEntry>,
+) -> Result<ContentImportResult, String> {
+    let mut result = ContentImportResult {
+        imported: Vec::new(),
+        skipped_duplicates: 0,
+        skipped_invalid: 0,
+        failed: Vec::new(),
+    };
+
+    for entry in entries {
+        let kind = entry.kind.as_str();
+        match kind {
+            "markdown" => {
+                if !is_markdown_file(&entry.file_name) {
+                    result.skipped_invalid += 1;
+                    continue;
+                }
+
+                let Some(text) = entry.text.as_deref() else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+                let Some(markdown) = normalize_imported_markdown(&entry.file_name, text) else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+
+                let event = CaptureEvent {
+                    content_type: "text".to_string(),
+                    preview: markdown.chars().take(100).collect(),
+                    source_app: "导入内容".to_string(),
+                    raw_text: Some(markdown.clone()),
+                    image_path: None,
+                };
+
+                match save_content_auto(&state.db, event) {
+                    Ok(content) => {
+                        spawn_summary_task(
+                            state.db.clone(),
+                            app.clone(),
+                            content.id.clone(),
+                            markdown,
+                        );
+                        result.imported.push(content);
+                    }
+                    Err(e) if e.contains("Duplicate content") => {
+                        result.skipped_duplicates += 1;
+                    }
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                    }
+                }
+            }
+            "text" => {
+                if !is_text_file(&entry.file_name) {
+                    result.skipped_invalid += 1;
+                    continue;
+                }
+
+                let Some(text) = entry.text.as_deref() else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+                let Some(normalized) = normalize_imported_text(&entry.file_name, text) else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+
+                let event = CaptureEvent {
+                    content_type: "text".to_string(),
+                    preview: normalized.chars().take(100).collect(),
+                    source_app: "导入内容".to_string(),
+                    raw_text: Some(normalized.clone()),
+                    image_path: None,
+                };
+
+                match save_content_auto(&state.db, event) {
+                    Ok(content) => {
+                        spawn_summary_task(
+                            state.db.clone(),
+                            app.clone(),
+                            content.id.clone(),
+                            normalized,
+                        );
+                        result.imported.push(content);
+                    }
+                    Err(e) if e.contains("Duplicate content") => {
+                        result.skipped_duplicates += 1;
+                    }
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                    }
+                }
+            }
+            "image" => {
+                if !is_supported_image_file(&entry.file_name) {
+                    result.skipped_invalid += 1;
+                    continue;
+                }
+
+                let Some(data_base64) = entry.data_base64.as_deref() else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+
+                let temp_path = match write_imported_image_temp(&entry.file_name, data_base64) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                        continue;
+                    }
+                };
+                let temp_path_str = temp_path.to_string_lossy().to_string();
+                let event = CaptureEvent {
+                    content_type: "image".to_string(),
+                    preview: title_from_filename(&entry.file_name, "Imported Image"),
+                    source_app: "导入内容".to_string(),
+                    raw_text: None,
+                    image_path: Some(temp_path_str),
+                };
+
+                match save_content_auto(&state.db, event) {
+                    Ok(content) => {
+                        spawn_auto_ocr(&app, &state.db, &content);
+                        result.imported.push(content);
+                    }
+                    Err(e) if e.contains("Duplicate content") => {
+                        result.skipped_duplicates += 1;
+                    }
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                    }
+                }
+
+                if let Err(e) = std::fs::remove_file(&temp_path) {
+                    log::warn!(
+                        "Failed to clean imported image temp file {}: {}",
+                        temp_path.display(),
+                        e
+                    );
+                }
+            }
+            "document" => {
+                if !is_supported_document_file(&entry.file_name) {
+                    result.skipped_invalid += 1;
+                    continue;
+                }
+
+                let Some(data_base64) = entry.data_base64.as_deref() else {
+                    result.skipped_invalid += 1;
+                    continue;
+                };
+
+                let temp_path = match write_imported_document_temp(&entry.file_name, data_base64) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                        continue;
+                    }
+                };
+
+                let markdown = match convert_document_with_markitdown(&temp_path) {
+                    Ok(markdown) => normalize_imported_markdown(&entry.file_name, &markdown),
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                        if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                            log::warn!(
+                                "Failed to clean imported document temp file {}: {}",
+                                temp_path.display(),
+                                cleanup_err
+                            );
+                        }
+                        continue;
+                    }
+                };
+
+                let Some(markdown) = markdown else {
+                    result.skipped_invalid += 1;
+                    if let Err(e) = std::fs::remove_file(&temp_path) {
+                        log::warn!(
+                            "Failed to clean imported document temp file {}: {}",
+                            temp_path.display(),
+                            e
+                        );
+                    }
+                    continue;
+                };
+
+                let event = CaptureEvent {
+                    content_type: "text".to_string(),
+                    preview: markdown.chars().take(100).collect(),
+                    source_app: "导入内容".to_string(),
+                    raw_text: Some(markdown.clone()),
+                    image_path: None,
+                };
+
+                match save_content_auto(&state.db, event) {
+                    Ok(content) => {
+                        spawn_summary_task(
+                            state.db.clone(),
+                            app.clone(),
+                            content.id.clone(),
+                            markdown,
+                        );
+                        result.imported.push(content);
+                    }
+                    Err(e) if e.contains("Duplicate content") => {
+                        result.skipped_duplicates += 1;
+                    }
+                    Err(e) => {
+                        result.failed.push(format!("{}: {}", entry.file_name, e));
+                    }
+                }
+
+                if let Err(e) = std::fs::remove_file(&temp_path) {
+                    log::warn!(
+                        "Failed to clean imported document temp file {}: {}",
+                        temp_path.display(),
+                        e
+                    );
+                }
+            }
+            _ => {
+                result.skipped_invalid += 1;
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Find the most recently captured content item (used as fallback when

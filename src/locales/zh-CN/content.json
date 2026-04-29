@@ -3,6 +3,7 @@
   "filter": {
     "all": "全部",
     "text": "文本",
+    "document": "导入内容",
     "image": "图片",
     "url": "链接"
   },
@@ -60,6 +61,20 @@
     "exporting": "导出中...",
     "done": "已导出",
     "button": "导出"
+  },
+  "import": {
+    "button": "导入内容",
+    "choosing": "选择文件中...",
+    "importing": "导入中...",
+    "done": "已导入 {{imported}} 个，跳过 {{skipped}} 个，失败 {{failed}} 个",
+    "failed": "导入失败",
+    "failedWithReason": "导入失败：{{reason}}",
+    "onlyMarkdown": "请选择 Markdown 文件",
+    "unsupported": "请选择 Markdown、TXT、图片、PDF、DOCX 或 PPTX 文件",
+    "panelTitle": "支持的文件格式",
+    "supportedLabel": "已支持",
+    "futureLabel": "后续再评估",
+    "chooseButton": "选择文件"
   },
   "capture": {
     "active": "捕获中",
