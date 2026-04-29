@@ -66,6 +66,10 @@
     "button": "导入内容",
     "choosing": "选择文件中...",
     "importing": "导入中...",
+    "reading": "正在读取 {{count}} 个文件...",
+    "converting": "正在转换文档，PDF、Word、PPT 可能需要多等一会儿...",
+    "saving": "正在保存到内容列表...",
+    "takingLong": "还在处理，没有卡死；大文件转换会更久一些。",
     "done": "已导入 {{imported}} 个，跳过 {{skipped}} 个，失败 {{failed}} 个",
     "failed": "导入失败",
     "failedWithReason": "导入失败：{{reason}}",
@@ -74,7 +78,10 @@
     "panelTitle": "支持的文件格式",
     "supportedLabel": "已支持",
     "futureLabel": "后续再评估",
-    "chooseButton": "选择文件"
+    "chooseButton": "选择文件",
+    "noticeWorking": "正在导入",
+    "noticeDone": "导入完成",
+    "noticeError": "导入失败"
   },
   "capture": {
     "active": "捕获中",

@@ -66,6 +66,10 @@
     "button": "Import Content",
     "choosing": "Choosing file...",
     "importing": "Importing...",
+    "reading": "Reading {{count}} file(s)...",
+    "converting": "Converting document. PDF, Word, and PPT files may take a little longer...",
+    "saving": "Saving to the content list...",
+    "takingLong": "Still working, not stuck. Large files can take longer to convert.",
     "done": "Imported {{imported}}, skipped {{skipped}}, failed {{failed}}",
     "failed": "Import failed",
     "failedWithReason": "Import failed: {{reason}}",
@@ -74,7 +78,10 @@
     "panelTitle": "Supported Formats",
     "supportedLabel": "Supported",
     "futureLabel": "Later",
-    "chooseButton": "Choose Files"
+    "chooseButton": "Choose Files",
+    "noticeWorking": "Importing",
+    "noticeDone": "Import complete",
+    "noticeError": "Import failed"
   },
   "capture": {
     "active": "Capturing",

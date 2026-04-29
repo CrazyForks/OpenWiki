@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 /// The application data directory name for storing captured images.
 const APP_DATA_DIR: &str = "com.openwiki.app";
@@ -228,21 +228,41 @@ fn write_imported_document_temp(file_name: &str, data_base64: &str) -> Result<Pa
     Ok(temp_path)
 }
 
-fn command_exists(command: &str) -> bool {
-    std::process::Command::new(command)
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-fn markitdown_command_candidates() -> Vec<(String, Vec<String>)> {
+fn markitdown_command_candidates(app: &tauri::AppHandle) -> Vec<(String, Vec<String>)> {
     let mut candidates = Vec::new();
 
     if let Ok(path) = std::env::var("OPENWIKI_MARKITDOWN_BIN") {
         if !path.trim().is_empty() {
             candidates.push((path, Vec::new()));
         }
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        for path in [
+            resource_dir.join("markitdown/bin/openwiki-markitdown"),
+            resource_dir.join("markitdown/venv/bin/markitdown"),
+            resource_dir.join("resources/markitdown/bin/openwiki-markitdown"),
+            resource_dir.join("resources/markitdown/venv/bin/markitdown"),
+        ] {
+            candidates.push((path.to_string_lossy().to_string(), Vec::new()));
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        candidates.push((
+            Path::new(&manifest_dir)
+                .join("resources/markitdown/bin/openwiki-markitdown")
+                .to_string_lossy()
+                .to_string(),
+            Vec::new(),
+        ));
+        candidates.push((
+            Path::new(&manifest_dir)
+                .join("resources/markitdown/venv/bin/markitdown")
+                .to_string_lossy()
+                .to_string(),
+            Vec::new(),
+        ));
     }
 
     for path in [
@@ -265,21 +285,28 @@ fn markitdown_command_candidates() -> Vec<(String, Vec<String>)> {
     candidates
 }
 
-fn convert_document_with_markitdown(path: &Path) -> Result<String, String> {
+fn convert_document_with_markitdown(
+    app: &tauri::AppHandle,
+    path: &Path,
+) -> Result<String, String> {
     let file_arg = path.to_string_lossy().to_string();
     let mut attempted = Vec::new();
 
-    for (command, mut args) in markitdown_command_candidates() {
-        if !Path::new(&command).exists() && !command_exists(&command) {
+    for (command, mut args) in markitdown_command_candidates(app) {
+        if command.contains('/') && !Path::new(&command).exists() {
             attempted.push(command);
             continue;
         }
 
         args.push(file_arg.clone());
-        let output = std::process::Command::new(&command)
-            .args(&args)
-            .output()
-            .map_err(|e| format!("Failed to run MarkItDown: {}", e))?;
+        let output = match std::process::Command::new(&command).args(&args).output() {
+            Ok(output) => output,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                attempted.push(command);
+                continue;
+            }
+            Err(e) => return Err(format!("Failed to run MarkItDown: {}", e)),
+        };
 
         if output.status.success() {
             let markdown = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -822,7 +849,7 @@ pub fn import_content_files(
                     }
                 };
 
-                let markdown = match convert_document_with_markitdown(&temp_path) {
+                let markdown = match convert_document_with_markitdown(&app, &temp_path) {
                     Ok(markdown) => normalize_imported_markdown(&entry.file_name, &markdown),
                     Err(e) => {
                         result.failed.push(format!("{}: {}", entry.file_name, e));

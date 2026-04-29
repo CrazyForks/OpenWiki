@@ -22,6 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+__pycache__/
+*.py[cod]
 .gstack/
 .omx/
 .codex/
@@ -42,6 +44,12 @@ src-tauri/.cargo/
 # Bundled yt-dlp binary — downloaded automatically by build.rs from GitHub
 # releases on first build. Not committed (36MB binary).
 src-tauri/resources/yt-dlp_macos
+
+# Bundled MarkItDown converter — generated on release/build machines.
+# It is packaged into the app when present, but not committed to Git.
+src-tauri/resources/markitdown/bin/
+src-tauri/resources/markitdown/venv/
+src-tauri/resources/markitdown/VERSION.txt
 
 # Internal planning docs (not for public repo)
 docs/superpowers/

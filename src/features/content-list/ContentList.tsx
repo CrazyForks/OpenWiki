@@ -8,7 +8,7 @@ import {
 } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
-import { FileText, Image as ImageIcon, Import } from "lucide-react";
+import { CheckCircle2, FileText, Image as ImageIcon, Import, LoaderCircle, XCircle } from "lucide-react";
 import { useContentStore } from "../../stores/contentStore";
 import {
   getAllContent,
@@ -26,6 +26,7 @@ import type { ContentType } from "../../types/content";
 type FilterType = "all" | ContentType;
 type DateRange = "all" | "today" | "week" | "half-month";
 type ContentFilter = FilterType | "document";
+type ImportStatus = "idle" | "picking" | "reading" | "converting" | "saving" | "done" | "error";
 
 const FILTER_TABS: { value: ContentFilter; labelKey: string; icon: string }[] = [
   { value: "all", labelKey: "filter.all", icon: "📋" },
@@ -62,6 +63,7 @@ const IMPORT_ACCEPT = [
 const IMPORT_SOURCE_APPS = new Set(["Markdown 导入", "导入内容"]);
 const SUPPORTED_IMPORT_FORMATS = ["Markdown", "TXT", "PNG", "JPG", "WebP", "GIF", "PDF", "DOCX", "PPTX"];
 const FUTURE_IMPORT_FORMATS = ["DOC", "PPT"];
+const LONG_IMPORT_NOTICE_MS = 8000;
 
 const isImportedDocument = (content: { source_app: string }) =>
   IMPORT_SOURCE_APPS.has(content.source_app);
@@ -122,8 +124,9 @@ export function ContentList() {
   const [filter, setFilter] = useState<ContentFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
-  const [importStatus, setImportStatus] = useState<"idle" | "picking" | "importing" | "done" | "error">("idle");
+  const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
   const [importMessage, setImportMessage] = useState("");
+  const [isImportTakingLong, setIsImportTakingLong] = useState(false);
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +188,7 @@ export function ContentList() {
     importPickerOpenRef.current = true;
     setImportStatus("picking");
     setImportMessage(t("import.choosing"));
+    setIsImportPanelOpen(false);
     importInputRef.current.click();
   }, [t]);
 
@@ -206,10 +210,12 @@ export function ContentList() {
       return;
     }
 
-    setImportStatus("importing");
-    setImportMessage(t("import.importing"));
+    setImportStatus("reading");
+    setImportMessage(t("import.reading", { count: supportedFiles.length }));
+    setIsImportTakingLong(false);
     setIsImportPanelOpen(false);
     try {
+      const hasDocument = supportedFiles.some(({ kind }) => kind === "document");
       const entries = await Promise.all(
         supportedFiles.map(async ({ file, kind }): Promise<ContentImportEntry> => {
           if (kind === "image" || kind === "document") {
@@ -226,7 +232,11 @@ export function ContentList() {
           };
         })
       );
+      setImportStatus(hasDocument ? "converting" : "saving");
+      setImportMessage(hasDocument ? t("import.converting") : t("import.saving"));
       const result = await importContentFiles(entries);
+      setImportStatus("saving");
+      setImportMessage(t("import.saving"));
       await loadInitial();
 
       const importedIds = result.imported.map((item) => item.id);
@@ -254,6 +264,17 @@ export function ContentList() {
       setTimeout(() => setImportStatus("idle"), 4000);
     }
   }, [loadInitial, setHighlightedIds, t]);
+
+  useEffect(() => {
+    const isProcessing = importStatus === "reading" || importStatus === "converting" || importStatus === "saving";
+    if (!isProcessing) {
+      setIsImportTakingLong(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setIsImportTakingLong(true), LONG_IMPORT_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [importStatus]);
 
   const handleContentImport = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     importPickerOpenRef.current = false;
@@ -421,6 +442,8 @@ export function ContentList() {
     return counts;
   }, [contents, totalCount]);
 
+  const isImportBusy = importStatus === "picking" || importStatus === "reading" || importStatus === "converting" || importStatus === "saving";
+
   const renderImportPanel = (align: "center" | "right") => {
     if (!isImportPanelOpen) return null;
     return (
@@ -475,12 +498,65 @@ export function ContentList() {
         <button
           type="button"
           onClick={handleChooseFiles}
-          disabled={importStatus === "picking" || importStatus === "importing"}
+          disabled={isImportBusy}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-orange-500 bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-all hover:bg-orange-600 disabled:opacity-60"
         >
           <Import size={16} />
-          {importStatus === "picking" ? t("import.choosing") : importStatus === "importing" ? t("import.importing") : t("import.chooseButton")}
+          {importStatus === "picking" ? t("import.choosing") : isImportBusy ? t("import.importing") : t("import.chooseButton")}
         </button>
+      </div>
+    );
+  };
+
+  const renderImportNotice = () => {
+    if (importStatus === "idle" || importStatus === "picking" || !importMessage) return null;
+
+    const isError = importStatus === "error";
+    const isDone = importStatus === "done";
+    const statusColor = isError
+      ? "text-red-500"
+      : isDone
+      ? "text-green-600 dark:text-green-400"
+      : "text-orange-500";
+    const borderColor = isError
+      ? "border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10"
+      : isDone
+      ? "border-green-200 bg-green-50 dark:border-green-500/20 dark:bg-green-500/10"
+      : "border-orange-200 bg-orange-50 dark:border-orange-500/20 dark:bg-orange-500/10";
+
+    return (
+      <div className="fixed bottom-6 right-6 z-[70] w-[min(360px,calc(100vw-48px))]">
+        <div className={`rounded-xl border px-4 py-3 shadow-xl shadow-stone-950/10 dark:shadow-black/30 ${borderColor}`}>
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 ${statusColor}`}>
+              {isError ? (
+                <XCircle size={18} />
+              ) : isDone ? (
+                <CheckCircle2 size={18} />
+              ) : (
+                <LoaderCircle size={18} className="animate-spin" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className={`text-sm font-semibold ${statusColor}`}>
+                {isError ? t("import.noticeError") : isDone ? t("import.noticeDone") : t("import.noticeWorking")}
+              </div>
+              <div className="mt-0.5 break-words text-xs leading-5 text-stone-600 dark:text-stone-300">
+                {importMessage}
+              </div>
+              {isImportTakingLong && isImportBusy && (
+                <div className="mt-1 text-[11px] leading-5 text-stone-500 dark:text-stone-400">
+                  {t("import.takingLong")}
+                </div>
+              )}
+              {isImportBusy && (
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/80 dark:bg-white/[0.08]">
+                  <div className="h-full w-1/2 rounded-full bg-orange-500/80 animate-pulse" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -488,6 +564,7 @@ export function ContentList() {
   if (isLoading) {
     return (
       <div className="p-4 space-y-3">
+        {renderImportNotice()}
         <div className="flex items-center justify-between px-1">
           <div className="h-6 w-32 bg-white/50 dark:bg-white/[0.06] rounded-lg animate-pulse" />
           <div className="h-5 w-16 bg-white/50 dark:bg-white/[0.06] rounded-full animate-pulse" />
@@ -511,6 +588,7 @@ export function ContentList() {
   if (contents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-80">
+        {renderImportNotice()}
         <input
           ref={importInputRef}
           type="file"
@@ -531,7 +609,7 @@ export function ContentList() {
         <div ref={importPanelRef} className="relative mt-5">
           <button
             onClick={openImportPanel}
-            disabled={importStatus === "importing"}
+            disabled={isImportBusy}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all border disabled:opacity-60"
             style={{
               color: "#F97316",
@@ -540,7 +618,7 @@ export function ContentList() {
             }}
           >
             <Import size={16} />
-            {importStatus === "importing" ? t("import.importing") : t("import.button")}
+            {isImportBusy ? t("import.importing") : t("import.button")}
           </button>
           {renderImportPanel("center")}
         </div>
@@ -561,6 +639,7 @@ export function ContentList() {
 
   return (
     <div ref={scrollContainerRef} className="overflow-y-auto p-4 space-y-3" style={{ height: "calc(100vh - 44px)" }}>
+      {renderImportNotice()}
       <input
         ref={importInputRef}
         type="file"
@@ -630,19 +709,19 @@ export function ContentList() {
           <div ref={importPanelRef} className="relative">
             <button
               onClick={openImportPanel}
-              disabled={importStatus === "importing"}
+              disabled={isImportBusy}
               className={`text-[11px] px-2.5 py-1 rounded-md border transition-all flex items-center gap-1 disabled:opacity-60
                 ${importStatus === "done"
                   ? "text-green-600 border-green-300 bg-green-50"
                   : importStatus === "error"
                   ? "text-red-500 border-red-200 bg-red-50 dark:bg-red-500/10"
-                  : importStatus === "importing"
+                  : isImportBusy
                   ? "text-orange-500 border-orange-300 bg-orange-50 animate-pulse"
                   : "text-gray-400 dark:text-slate-500 border-gray-200/60 dark:border-white/[0.08] bg-white/60 dark:bg-white/[0.04] hover:border-orange-300 hover:text-orange-500"
                 }`}
             >
               <Import size={13} />
-              {importStatus === "importing" ? t("import.importing") : t("import.button")}
+              {isImportBusy ? t("import.importing") : t("import.button")}
             </button>
             {renderImportPanel("right")}
           </div>

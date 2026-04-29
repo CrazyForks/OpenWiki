@@ -7,9 +7,20 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    name: Build macOS (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - label: Apple Silicon
+            os: macos-latest
+            rust_target: aarch64-apple-darwin
+          - label: Intel
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
 
     steps:
       - name: Checkout
@@ -24,7 +35,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.rust_target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -33,6 +44,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Prepare bundled document converter
+        run: ./src-tauri/scripts/setup_markitdown.sh
 
       # Read per-version release notes from release-notes/<tag>.md.
       # Claude maintains this file (see release-notes/README.md); if it's
@@ -57,7 +71,7 @@ jobs:
             echo "${EOF_MARKER}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build Tauri app (Apple Silicon)
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,15 +81,4 @@ jobs:
           releaseBody: ${{ steps.release_body.outputs.body }}
           releaseDraft: false
           prerelease: false
-          args: --target aarch64-apple-darwin
-
-      - name: Build Tauri app (Intel)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'OpenWiki ${{ github.ref_name }}'
-          releaseDraft: false
-          prerelease: false
-          args: --target x86_64-apple-darwin
+          args: --target ${{ matrix.rust_target }}
