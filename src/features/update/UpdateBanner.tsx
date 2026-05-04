@@ -26,6 +26,7 @@ export function UpdateBanner() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [installState, setInstallState] = useState<InstallState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [fallbackToDownload, setFallbackToDownload] = useState(false);
 
   useEffect(() => {
     const unlisten = listen<UpdateInfo>("update-available", (event) => {
@@ -47,13 +48,21 @@ export function UpdateBanner() {
   if (!info) return null;
 
   const handleInstall = async () => {
+    if (fallbackToDownload) {
+      await handleViewNotes();
+      return;
+    }
+
     setInstallState("downloading");
     setErrorMsg("");
+    setFallbackToDownload(false);
     try {
       const update = await check();
       if (!update) {
         setInstallState("failed");
         setErrorMsg("No update found");
+        setFallbackToDownload(true);
+        await handleViewNotes();
         return;
       }
       await update.downloadAndInstall((event) => {
@@ -66,6 +75,15 @@ export function UpdateBanner() {
       console.error("[update] downloadAndInstall failed:", err);
       setInstallState("failed");
       setErrorMsg(err instanceof Error ? err.message : String(err));
+      setFallbackToDownload(true);
+
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        message.includes("release JSON") ||
+        message.includes("No update found")
+      ) {
+        await handleViewNotes();
+      }
     }
   };
 
@@ -87,7 +105,9 @@ export function UpdateBanner() {
   };
 
   const installLabel =
-    installState === "downloading"
+    fallbackToDownload
+      ? t("banner.downloadFallback")
+      : installState === "downloading"
       ? t("banner.downloading")
       : installState === "installing"
       ? t("banner.installing")
@@ -113,7 +133,9 @@ export function UpdateBanner() {
           </div>
           <div className="text-[11px] text-gray-500 dark:text-orange-200/70 truncate">
             {installState === "failed"
-              ? t("banner.failed", { error: errorMsg })
+              ? fallbackToDownload
+                ? t("banner.failedFallback")
+                : t("banner.failed", { error: errorMsg })
               : t("banner.subtitle", { current: info.current_version })}
           </div>
         </div>

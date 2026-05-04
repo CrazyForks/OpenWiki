@@ -3,12 +3,14 @@
     "title": "OpenWiki {{version}} is available",
     "subtitle": "Current version {{current}}",
     "install": "Update now",
+    "downloadFallback": "Download update",
     "downloading": "Downloading…",
     "installing": "Installing…",
     "view": "Release notes",
     "later": "Later",
     "close": "Close",
-    "failed": "Update failed: {{error}}"
+    "failed": "Update failed: {{error}}",
+    "failedFallback": "Automatic update is unavailable right now. Please use the release page to download the update manually."
   },
   "settings": {
     "sectionTitle": "App updates",
