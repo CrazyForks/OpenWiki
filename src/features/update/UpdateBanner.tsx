@@ -1,32 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useTranslation } from "react-i18next";
-import { Sparkles, X, Loader2 } from "lucide-react";
-import {
-  dismissUpdateVersion,
-  type UpdateInfo,
-} from "../../services/updateService";
+import { CheckCircle2, Download, Loader2, X } from "lucide-react";
+import { type UpdateInfo } from "../../services/updateService";
 
-type InstallState = "idle" | "downloading" | "installing" | "failed";
+type PrepareState = "idle" | "preparing" | "ready" | "installing" | "failed";
 
 /**
- * Top-of-main-window banner announcing a newer OpenWiki version.
+ * Silent update preparer + restart confirmation dialog.
  *
  * Notification source is the existing GitHub-Releases polling backend
- * (`src-tauri/src/update/mod.rs`). When the user clicks "立即升级", we
- * hand off to `tauri-plugin-updater` which downloads the signed bundle,
- * verifies it against the embedded public key, installs it, and relaunches
- * — same one-click flow as Slack / Linear / VS Code.
+ * (`src-tauri/src/update/mod.rs`). Once a newer version is detected, we
+ * quietly download it through `tauri-plugin-updater`; only after the update
+ * package is ready do we ask the user whether to install and relaunch.
  */
 export function UpdateBanner() {
   const { t } = useTranslation("update");
   const [info, setInfo] = useState<UpdateInfo | null>(null);
-  const [installState, setInstallState] = useState<InstallState>("idle");
+  const [downloadedUpdate, setDownloadedUpdate] = useState<Update | null>(null);
+  const [prepareState, setPrepareState] = useState<PrepareState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const [fallbackToDownload, setFallbackToDownload] = useState(false);
+  const preparingVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unlisten = listen<UpdateInfo>("update-available", (event) => {
@@ -45,46 +42,87 @@ export function UpdateBanner() {
     };
   }, []);
 
-  if (!info) return null;
+  useEffect(() => {
+    if (!info || preparingVersionRef.current === info.version) {
+      return;
+    }
+
+    let cancelled = false;
+    preparingVersionRef.current = info.version;
+    setPrepareState("preparing");
+    setErrorMsg("");
+
+    const prepareUpdate = async () => {
+      const update = await check();
+      if (!update) {
+        if (!cancelled) {
+          preparingVersionRef.current = null;
+          setPrepareState("idle");
+        }
+        return;
+      }
+
+      await update.download();
+      if (!cancelled) {
+        setDownloadedUpdate(update);
+        setPrepareState("ready");
+      }
+    };
+
+    prepareUpdate().catch((err) => {
+      console.error("[update] background download failed:", err);
+      if (!cancelled) {
+        preparingVersionRef.current = null;
+        setPrepareState("idle");
+        setErrorMsg(err instanceof Error ? err.message : String(err));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [info]);
+
+  if (!info || prepareState === "idle" || prepareState === "preparing") {
+    return null;
+  }
 
   const handleInstall = async () => {
-    if (fallbackToDownload) {
+    if (prepareState === "failed") {
       await handleViewNotes();
       return;
     }
 
-    setInstallState("downloading");
+    setPrepareState("installing");
     setErrorMsg("");
-    setFallbackToDownload(false);
     try {
-      const update = await check();
-      if (!update) {
-        setInstallState("failed");
-        setErrorMsg("No update found");
-        setFallbackToDownload(true);
-        await handleViewNotes();
-        return;
+      if (!downloadedUpdate) {
+        throw new Error("Update package is not ready");
       }
-      await update.downloadAndInstall((event) => {
-        if (event.event === "Finished") {
-          setInstallState("installing");
-        }
-      });
+      await downloadedUpdate.install();
       await relaunch();
     } catch (err) {
-      console.error("[update] downloadAndInstall failed:", err);
-      setInstallState("failed");
+      console.error("[update] install failed:", err);
+      setPrepareState("failed");
       setErrorMsg(err instanceof Error ? err.message : String(err));
-      setFallbackToDownload(true);
-
-      const message = err instanceof Error ? err.message : String(err);
-      if (
-        message.includes("release JSON") ||
-        message.includes("No update found")
-      ) {
-        await handleViewNotes();
-      }
     }
+  };
+
+  const handleClose = () => {
+    if (prepareState === "installing") {
+      return;
+    }
+
+    if (downloadedUpdate) {
+      downloadedUpdate.close().catch((err) => {
+        console.error("[update] failed to close downloaded update:", err);
+      });
+    }
+    setDownloadedUpdate(null);
+    preparingVersionRef.current = null;
+    setPrepareState("idle");
+    setInfo(null);
+    setErrorMsg("");
   };
 
   const handleViewNotes = async () => {
@@ -95,82 +133,117 @@ export function UpdateBanner() {
     }
   };
 
-  const handleLater = async () => {
-    try {
-      await dismissUpdateVersion(info.version);
-    } catch (err) {
-      console.error("[update] failed to dismiss version:", err);
-    }
-    setInfo(null);
-  };
+  const title =
+    prepareState === "failed"
+      ? t("dialog.failedTitle")
+      : t("dialog.title", { version: info.version });
 
-  const installLabel =
-    fallbackToDownload
-      ? t("banner.downloadFallback")
-      : installState === "downloading"
-      ? t("banner.downloading")
-      : installState === "installing"
-      ? t("banner.installing")
-      : t("banner.install");
+  const description =
+    prepareState === "failed"
+      ? t("dialog.failedBody", { error: errorMsg })
+      : t("dialog.body", { version: info.version });
 
-  const isWorking =
-    installState === "downloading" || installState === "installing";
+  const primaryLabel =
+    prepareState === "installing"
+      ? t("dialog.installing")
+      : prepareState === "failed"
+      ? t("dialog.downloadFallback")
+      : t("dialog.install");
 
   return (
     <div
-      role="status"
+      className="fixed bottom-4 left-4 right-4 z-[100] flex justify-center
+                 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-200
+                 sm:bottom-5 sm:left-auto sm:right-5 sm:justify-end"
+      role="dialog"
       aria-live="polite"
-      className="sticky top-[40px] z-[9] border-b border-orange-200/60 dark:border-orange-500/20
-                 bg-orange-50/95 dark:bg-orange-500/[0.08] backdrop-blur-xl
-                 animate-in fade-in slide-in-from-top-2 duration-300"
+      aria-labelledby="update-ready-title"
+      aria-describedby="update-ready-description"
     >
-      <div className="flex items-center gap-3 px-4 py-2.5 max-w-full">
-        <Sparkles className="w-4 h-4 text-orange-500 flex-shrink-0" />
+      <div
+        className="relative w-full max-w-[420px] rounded-2xl pointer-events-auto
+                   border border-stone-200/70 dark:border-white/[0.08]
+                   bg-white text-stone-900 dark:bg-stone-900 dark:text-stone-50
+                   shadow-[0_24px_70px_rgba(28,25,23,0.24)]
+                   p-7 animate-in slide-in-from-bottom-3 duration-300"
+      >
+        <button
+          onClick={handleClose}
+          disabled={prepareState === "installing"}
+          aria-label={t("dialog.close")}
+          className="absolute right-4 top-4 rounded-lg p-1.5 text-stone-400
+                     transition-colors hover:bg-stone-100 hover:text-stone-700
+                     disabled:cursor-not-allowed disabled:opacity-40
+                     dark:text-stone-500 dark:hover:bg-white/[0.06] dark:hover:text-stone-200"
+        >
+          <X className="h-4 w-4" />
+        </button>
 
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-medium text-gray-900 dark:text-orange-50 truncate">
-            {t("banner.title", { version: info.version })}
-          </div>
-          <div className="text-[11px] text-gray-500 dark:text-orange-200/70 truncate">
-            {installState === "failed"
-              ? fallbackToDownload
-                ? t("banner.failedFallback")
-                : t("banner.failed", { error: errorMsg })
-              : t("banner.subtitle", { current: info.current_version })}
-          </div>
+        <div
+          className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl
+                     bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300"
+        >
+          {prepareState === "failed" ? (
+            <Download className="h-6 w-6" strokeWidth={2.2} />
+          ) : (
+            <CheckCircle2 className="h-6 w-6" strokeWidth={2.2} />
+          )}
         </div>
 
-        <button
-          onClick={handleInstall}
-          disabled={isWorking}
-          className="flex-shrink-0 px-3 py-1 text-[12px] font-medium rounded-md
-                     bg-orange-500 text-white hover:bg-orange-600
-                     disabled:opacity-70 disabled:cursor-wait
-                     transition-colors shadow-sm
-                     flex items-center gap-1.5"
+        <h2
+          id="update-ready-title"
+          className="mb-2 text-xl font-semibold tracking-normal text-stone-900 dark:text-stone-50"
         >
-          {isWorking && <Loader2 className="w-3 h-3 animate-spin" />}
-          {installLabel}
-        </button>
+          {title}
+        </h2>
 
-        <button
-          onClick={handleViewNotes}
-          className="flex-shrink-0 px-3 py-1 text-[12px] font-medium rounded-md
-                     text-orange-700 dark:text-orange-200 hover:bg-orange-100/60
-                     dark:hover:bg-orange-500/[0.15] transition-colors"
+        <p
+          id="update-ready-description"
+          className="mb-6 text-sm leading-6 text-stone-600 dark:text-stone-300"
         >
-          {t("banner.view")}
-        </button>
+          {description}
+        </p>
 
-        <button
-          onClick={handleLater}
-          aria-label={t("banner.close")}
-          className="flex-shrink-0 p-1 rounded text-gray-400 hover:text-gray-700
-                     dark:text-orange-300/60 dark:hover:text-orange-200
-                     hover:bg-orange-100/40 dark:hover:bg-orange-500/10 transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex gap-2.5">
+          <button
+            onClick={handleClose}
+            disabled={prepareState === "installing"}
+            className="flex-1 rounded-lg border border-stone-200 bg-white py-2.5
+                       text-sm font-medium text-stone-600 transition-colors
+                       hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50
+                       dark:border-white/[0.08] dark:bg-white/[0.03]
+                       dark:text-stone-300 dark:hover:bg-white/[0.06]"
+          >
+            {t("dialog.later")}
+          </button>
+
+          <button
+            onClick={handleInstall}
+            disabled={prepareState === "installing"}
+            className="flex-1 rounded-lg bg-orange-500 py-2.5 text-sm font-semibold
+                       text-white transition-colors hover:bg-orange-600
+                       disabled:cursor-wait disabled:opacity-75
+                       flex items-center justify-center gap-2"
+          >
+            {prepareState === "installing" && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            {primaryLabel}
+          </button>
+        </div>
+
+        {prepareState !== "failed" && (
+          <button
+            onClick={handleViewNotes}
+            disabled={prepareState === "installing"}
+            className="mt-3 w-full rounded-lg py-2 text-xs font-medium
+                       text-stone-500 transition-colors hover:bg-stone-50 hover:text-orange-600
+                       disabled:cursor-not-allowed disabled:opacity-50
+                       dark:text-stone-400 dark:hover:bg-white/[0.04] dark:hover:text-orange-300"
+          >
+            {t("dialog.view")}
+          </button>
+        )}
       </div>
     </div>
   );

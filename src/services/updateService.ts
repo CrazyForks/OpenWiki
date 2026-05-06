@@ -36,11 +36,6 @@ export async function checkForUpdateManual(): Promise<UpdateInfo | null> {
   return invoke("check_for_update_manual");
 }
 
-/** Mark a version as "remind me later" — suppresses banner until a newer one ships. */
-export async function dismissUpdateVersion(version: string): Promise<void> {
-  return invoke("dismiss_update_version", { version });
-}
-
 /** Toggle the on-launch auto-check. */
 export async function setUpdateCheckEnabled(enabled: boolean): Promise<void> {
   return invoke("set_update_check_enabled", { enabled });

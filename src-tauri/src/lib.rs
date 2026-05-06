@@ -275,7 +275,6 @@ pub fn run() {
             commands::wiki::get_page_sources,
             commands::wiki::get_content_wiki_pages,
             update::check_for_update_manual,
-            update::dismiss_update_version,
             update::set_update_check_enabled,
             update::get_update_settings,
             automation::get_automation_status,

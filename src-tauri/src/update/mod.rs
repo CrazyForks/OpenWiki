@@ -132,18 +132,6 @@ pub async fn check_for_update_manual(
     Ok(build_update_info(&release))
 }
 
-/// Persist the "later" click for a specific version so we don't re-nag
-/// the user until an even newer version ships.
-#[tauri::command]
-pub fn dismiss_update_version(
-    state: State<'_, AppState>,
-    version: String,
-) -> Result<(), String> {
-    let repo = Repository::new(state.db.clone());
-    repo.update_setting(SETTING_DISMISSED_VERSION, &version)
-        .map_err(|e| format!("Failed to save dismissed version: {}", e))
-}
-
 /// Toggle the auto-check feature from the Settings page.
 #[tauri::command]
 pub fn set_update_check_enabled(
