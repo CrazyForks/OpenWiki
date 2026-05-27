@@ -47,9 +47,7 @@ impl McpTarget {
     fn config_path(&self) -> Option<PathBuf> {
         match self {
             McpTarget::Claude => {
-                let base = dirs::data_dir().or_else(|| {
-                    dirs::home_dir().map(|h| h.join("Library").join("Application Support"))
-                })?;
+                let base = dirs::data_dir()?;
                 Some(base.join("Claude").join("claude_desktop_config.json"))
             }
             McpTarget::Openclaw => {
@@ -94,7 +92,8 @@ fn xiaoyun_db_path() -> Option<String> {
 /// Checks common paths because Tauri apps launched from Dock don't inherit shell PATH.
 fn is_node_installed() -> bool {
     // First try PATH (works when launched from terminal)
-    if std::process::Command::new("which")
+    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if std::process::Command::new(checker)
         .arg("node")
         .output()
         .map(|o| o.status.success())
@@ -104,8 +103,15 @@ fn is_node_installed() -> bool {
     }
     // Check common macOS Node.js locations
     let common_paths = [
+        #[cfg(target_os = "windows")]
+        r"C:\Program Files\nodejs\node.exe",
+        #[cfg(target_os = "windows")]
+        r"C:\Program Files (x86)\nodejs\node.exe",
+        #[cfg(not(target_os = "windows"))]
         "/usr/local/bin/node",
+        #[cfg(not(target_os = "windows"))]
         "/opt/homebrew/bin/node",
+        #[cfg(not(target_os = "windows"))]
         "/usr/bin/node",
     ];
     for path in &common_paths {
@@ -126,8 +132,15 @@ fn is_node_installed() -> bool {
 /// Find the absolute path to npx for writing into MCP config.
 fn find_npx_path() -> Option<String> {
     let common_paths = [
+        #[cfg(target_os = "windows")]
+        r"C:\Program Files\nodejs\npx.cmd",
+        #[cfg(target_os = "windows")]
+        r"C:\Program Files (x86)\nodejs\npx.cmd",
+        #[cfg(not(target_os = "windows"))]
         "/usr/local/bin/npx",
+        #[cfg(not(target_os = "windows"))]
         "/opt/homebrew/bin/npx",
+        #[cfg(not(target_os = "windows"))]
         "/usr/bin/npx",
     ];
     for path in &common_paths {
@@ -155,11 +168,25 @@ fn find_npx_path() -> Option<String> {
 
 /// Check if a process is running by name.
 fn is_process_running(name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        return std::process::Command::new("tasklist")
+            .output()
+            .map(|o| {
+                let stdout = String::from_utf8_lossy(&o.stdout).to_lowercase();
+                stdout.contains(&name.to_lowercase())
+            })
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
     std::process::Command::new("pgrep")
         .args(["-xi", name])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+    }
 }
 
 /// Read and parse the Claude Desktop config file.
@@ -486,7 +513,7 @@ mod tests {
             MCP_SERVER_KEY.to_string(),
             serde_json::json!({"command": "npx", "args": ["-y", "mcp-server-sqlite-npx"]}),
         );
-        assert!(config["mcpServers"]["xiaoyun"]["command"] == "npx");
+        assert!(config["mcpServers"][MCP_SERVER_KEY]["command"] == "npx");
     }
 
     #[test]
@@ -502,21 +529,21 @@ mod tests {
         );
         // Both entries should exist
         assert!(config["mcpServers"]["other-tool"]["command"] == "other");
-        assert!(config["mcpServers"]["xiaoyun"]["command"] == "npx");
+        assert!(config["mcpServers"][MCP_SERVER_KEY]["command"] == "npx");
     }
 
     #[test]
     fn test_remove_xiaoyun_entry() {
         let mut config = serde_json::json!({
             "mcpServers": {
-                "xiaoyun": {"command": "npx"},
+                MCP_SERVER_KEY: {"command": "npx"},
                 "other-tool": {"command": "other"}
             }
         });
         if let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
             servers.remove(MCP_SERVER_KEY);
         }
-        assert!(config["mcpServers"].get("xiaoyun").is_none());
+        assert!(config["mcpServers"].get(MCP_SERVER_KEY).is_none());
         assert!(config["mcpServers"]["other-tool"]["command"] == "other");
     }
 
@@ -533,7 +560,7 @@ mod tests {
     fn test_xiaoyun_db_path_is_absolute() {
         if let Some(path) = xiaoyun_db_path() {
             assert!(
-                path.starts_with('/'),
+                PathBuf::from(&path).is_absolute(),
                 "DB path should be absolute: {}",
                 path
             );
@@ -557,7 +584,7 @@ mod tests {
             MCP_SERVER_KEY.to_string(),
             serde_json::json!({"command": "npx"}),
         );
-        assert!(config["mcpServers"]["xiaoyun"]["command"] == "npx");
+        assert!(config["mcpServers"][MCP_SERVER_KEY]["command"] == "npx");
         assert!(config["someOtherKey"] == true);
     }
 
@@ -576,7 +603,7 @@ mod tests {
 
         // Verify connected
         let config = read_config(&path).unwrap();
-        assert!(config["mcpServers"]["xiaoyun"].is_object());
+        assert!(config["mcpServers"][MCP_SERVER_KEY].is_object());
         assert!(config["mcpServers"]["existing"].is_object());
 
         // Disconnect
@@ -589,7 +616,7 @@ mod tests {
 
         // Verify disconnected
         let config = read_config(&path).unwrap();
-        assert!(config["mcpServers"].get("xiaoyun").is_none());
+        assert!(config["mcpServers"].get(MCP_SERVER_KEY).is_none());
         assert!(config["mcpServers"]["existing"]["command"] == "foo");
     }
 }

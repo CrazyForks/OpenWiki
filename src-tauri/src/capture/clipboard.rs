@@ -214,6 +214,24 @@ impl ClipboardWatcher {
 
 /// Detect the frontmost application on macOS using osascript.
 fn detect_frontmost_app() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return detect_frontmost_app_macos();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return detect_frontmost_app_windows();
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "Unknown".to_string()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn detect_frontmost_app_macos() -> String {
     match std::process::Command::new("osascript")
         .args([
             "-e",
@@ -233,6 +251,40 @@ fn detect_frontmost_app() -> String {
         Err(e) => {
             log::error!("Failed to detect frontmost app: {}", e);
             "Unknown".to_string()
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_frontmost_app_windows() -> String {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+    };
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return "Unknown".to_string();
+        }
+
+        let len = GetWindowTextLengthW(hwnd);
+        if len <= 0 {
+            return "Unknown".to_string();
+        }
+
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        if copied <= 0 {
+            return "Unknown".to_string();
+        }
+
+        let title = String::from_utf16_lossy(&buf[..copied as usize])
+            .trim()
+            .to_string();
+        if title.is_empty() {
+            "Unknown".to_string()
+        } else {
+            title
         }
     }
 }

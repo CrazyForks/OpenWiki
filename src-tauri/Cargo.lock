@@ -3207,6 +3207,7 @@ dependencies = [
  "tokio",
  "uuid",
  "window-vibrancy 0.5.3",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

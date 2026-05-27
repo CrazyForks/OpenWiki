@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/kdsz001/OpenWiki/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-F97316?style=flat-square" alt="License"></a>
   <a href="https://github.com/kdsz001/OpenWiki/releases"><img src="https://img.shields.io/github/v/release/kdsz001/OpenWiki?style=flat-square&color=F97316" alt="Release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS-F97316?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-F97316?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/PRs-welcome-F97316?style=flat-square" alt="PRs Welcome">
 </p>
 
@@ -35,7 +35,7 @@
 - **只有你主动选择收藏的内容才会保存**，不会偷偷囤积
 - 支持文本、图片、URL，自动识别来源应用
 - 支持抓取微信公众号、X/Twitter 等 URL 的正文内容
-- `⌘⇧C` 全局快捷键可随时手动呼出捕获窗口
+- macOS 使用 `⌘⇧C`、Windows 使用 `Ctrl+Shift+C` 可随时手动呼出捕获窗口
 
 ### 📂 内容管理
 - 按类型（文本 / 图片 / 链接）和时间范围过滤
@@ -62,7 +62,7 @@
 
 ### 🖥 桌面体验
 - 系统托盘常驻，关闭窗口不退出
-- 全局快捷键 `⌘⇧Y` 唤起主窗口
+- macOS 使用 `⌘⇧Y`、Windows 使用 `Ctrl+Shift+Y` 唤起主窗口
 - 深色 / 浅色 / 跟随系统主题
 - MCP 协议集成，可连接 Claude Desktop
 
@@ -70,16 +70,30 @@
 
 - macOS (Apple Silicon): 下载下方的 `OpenWiki_X.Y.Z_aarch64.dmg`
 - macOS (Intel): 下载下方的 `OpenWiki_X.Y.Z_x64.dmg`
+- Windows (x64): 下载 `OpenWiki_X.Y.Z_x64-setup.exe`（推荐）或 `OpenWiki_X.Y.Z_x64_en-US.msi`
 
 👉 [前往 Release 页面下载](https://github.com/kdsz001/OpenWiki/releases)
 
 ### ⚠️ 首次打开指南（重要）
 
-由于应用未经 Apple 签名，macOS 会拦截。请按以下步骤操作：
+请根据你的系统选择对应步骤。
+
+#### macOS
+
+由于应用未经 Apple 签名，macOS 可能会拦截：
 
 1. 打开 `.dmg`，将 OpenWiki 拖入「应用程序」文件夹
 2. **打开终端，执行 `xattr -cr /Applications/OpenWiki.app` ，允许应用运行**
 3. 运行应用，在弹出的授权窗口点击“允许”
+4. 在应用的“设置”->“AI”中配置 AI 提供商信息
+
+#### Windows
+
+Windows 版本暂未进行代码签名，首次运行时 Microsoft Defender SmartScreen 可能会提示风险：
+
+1. 运行 `OpenWiki_X.Y.Z_x64-setup.exe`
+2. 如果出现 SmartScreen 提示，点击“更多信息”->“仍要运行”
+3. 从开始菜单或桌面快捷方式启动 OpenWiki
 4. 在应用的“设置”->“AI”中配置 AI 提供商信息
 
 ### 已知的外部依赖
@@ -95,8 +109,9 @@
 ### 前置要求
 - Node.js 18+
 - Rust (最新 stable)
-- macOS
-- Xcode Command Line Tools （终端运行 `xcode-select --install`）
+- macOS 13+ 或 Windows 10/11
+- macOS: Xcode Command Line Tools （终端运行 `xcode-select --install`）
+- Windows: Microsoft C++ Build Tools / Visual Studio Build Tools 和 WebView2 Runtime
 
 ### 开始
 
@@ -113,6 +128,16 @@ npm run tauri dev
 
 # 构建应用
 npm run tauri build
+```
+
+创建正式安装包前，需要先准备内置文档转换器：
+
+```bash
+# macOS / Linux
+./src-tauri/scripts/setup_markitdown.sh
+
+# Windows PowerShell
+./src-tauri/scripts/setup_markitdown.ps1
 ```
 
 ## 参与贡献

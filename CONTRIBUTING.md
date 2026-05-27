@@ -9,7 +9,9 @@ Thank you for your interest in contributing to OpenWiki! This document will help
 - [Node.js](https://nodejs.org/) >= 18
 - [Rust](https://rustup.rs/) (latest stable)
 - [Tauri 2 CLI](https://v2.tauri.app/start/prerequisites/)
-- macOS (currently the only supported platform)
+- macOS 13+ or Windows 10/11
+- macOS: Xcode Command Line Tools (`xcode-select --install`)
+- Windows: Microsoft C++ Build Tools / Visual Studio Build Tools and WebView2 Runtime
 
 ### Getting Started
 
@@ -25,14 +27,24 @@ npm install
 cp .env.example .env
 # Edit .env with your own API credentials
 
-# Run in development mode
-npm run dev
+# Run in Tauri development mode
+npm run tauri dev
 ```
 
 ### Build
 
 ```bash
 npm run build
+```
+
+To build a distributable desktop app:
+
+```bash
+# Prepare the bundled document converter first
+./src-tauri/scripts/setup_markitdown.sh      # macOS / Linux
+./src-tauri/scripts/setup_markitdown.ps1     # Windows PowerShell
+
+npm run tauri build
 ```
 
 ## Project Structure
@@ -60,7 +72,7 @@ npm run build
 
 - Open a [GitHub Issue](https://github.com/kdsz001/OpenWiki/issues)
 - Include steps to reproduce, expected vs actual behavior
-- Include your macOS version and app version
+- Include your operating system version and app version
 
 ### Suggesting Features
 

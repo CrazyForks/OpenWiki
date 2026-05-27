@@ -3,6 +3,10 @@ import sys
 
 from markitdown import MarkItDown
 
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 def main() -> int:
     if len(sys.argv) != 2:

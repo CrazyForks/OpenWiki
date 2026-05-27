@@ -8,8 +8,11 @@ import { useTranslation } from "react-i18next";
 const DEFAULT_COUNTDOWN = 5;
 const CIRCLE_SIZE = 48;
 const CIRCLE_WIN_H = 64; // Window height for circle mode (48px circle + 16px bounce padding)
+const CIRCLE_WIN_W_WINDOWS = 64;
 const CAPSULE_W = 320;
 const EXPANDED_H = 140; // Height when expanded with preview + input
+const IS_WINDOWS = typeof navigator !== "undefined" && /\bWindows\b/i.test(navigator.userAgent);
+const COLLAPSED_CIRCLE_W = IS_WINDOWS ? CIRCLE_WIN_W_WINDOWS : CAPSULE_W;
 
 interface PendingCapture {
   content_type: string;
@@ -23,10 +26,18 @@ export default function BubbleView() {
   const { t } = useTranslation("common");
 
   useEffect(() => {
+    document.documentElement.style.margin = "0";
     document.body.style.background = "transparent";
     document.documentElement.style.background = "transparent";
+    document.body.style.margin = "0";
+    document.body.style.overflow = "hidden";
     const root = document.getElementById("root");
-    if (root) root.style.background = "transparent";
+    if (root) {
+      root.style.background = "transparent";
+      root.style.width = "100vw";
+      root.style.height = "100vh";
+      root.style.overflow = "hidden";
+    }
   }, []);
 
   const [pending, setPending] = useState<PendingCapture | null>(null);
@@ -53,6 +64,14 @@ export default function BubbleView() {
   const inputRef = useRef<HTMLInputElement>(null);
   // Snapshot of countdown when memo is expanded (for pause/resume)
   const pausedCountdownRef = useRef<number | null>(null);
+
+  const getCircleExpandLeftDelta = useCallback(() => {
+    if (!IS_WINDOWS) return 0;
+    const widthDiff = CAPSULE_W - COLLAPSED_CIRCLE_W;
+    if (bubblePosition.includes("right")) return -widthDiff;
+    if (bubblePosition.includes("left")) return 0;
+    return -widthDiff / 2;
+  }, [bubblePosition]);
 
   useEffect(() => { pendingRef.current = pending; }, [pending]);
 
@@ -111,7 +130,8 @@ export default function BubbleView() {
           const scale = await win.scaleFactor();
           const pos = await win.outerPosition();
           const heightDiff = EXPANDED_H - CIRCLE_WIN_H;
-          await win.setPosition(new LogicalPosition(pos.x / scale, pos.y / scale - heightDiff));
+          const leftDelta = bubbleStyle === "circle" ? getCircleExpandLeftDelta() : 0;
+          await win.setPosition(new LogicalPosition(pos.x / scale + leftDelta, pos.y / scale - heightDiff));
           await win.setSize(new LogicalSize(CAPSULE_W, EXPANDED_H));
         } catch {}
       }
@@ -128,8 +148,8 @@ export default function BubbleView() {
         const scale = await win.scaleFactor();
         const pos = await win.outerPosition();
         const heightDiff = EXPANDED_H - CIRCLE_WIN_H;
-        await win.setPosition(new LogicalPosition(pos.x / scale, pos.y / scale + heightDiff));
-        await win.setSize(new LogicalSize(CAPSULE_W, CIRCLE_WIN_H));
+        await win.setPosition(new LogicalPosition(pos.x / scale - getCircleExpandLeftDelta(), pos.y / scale + heightDiff));
+        await win.setSize(new LogicalSize(COLLAPSED_CIRCLE_W, CIRCLE_WIN_H));
       } catch {}
     }
 
@@ -141,7 +161,7 @@ export default function BubbleView() {
     setTimeout(async () => {
       try { await appWindow.current.close(); } catch {}
     }, 1200);
-  }, [saving, confirmed, clearTimer, memo, expanded, bubblePosition, bubbleStyle]);
+  }, [saving, confirmed, clearTimer, memo, expanded, bubblePosition, bubbleStyle, getCircleExpandLeftDelta]);
 
   // Retry from the failure state: reset failureError + saving, then call
   // confirm() again. confirm() will re-invoke the backend and route to
@@ -184,13 +204,13 @@ export default function BubbleView() {
       const pos = await win.outerPosition();
       const heightDiff = EXPANDED_H - CIRCLE_WIN_H; // 140 - 48 = 92px
       // Move window up by the height difference
-      await win.setPosition(new LogicalPosition(pos.x / scale, pos.y / scale - heightDiff));
+      await win.setPosition(new LogicalPosition(pos.x / scale + getCircleExpandLeftDelta(), pos.y / scale - heightDiff));
       await win.setSize(new LogicalSize(CAPSULE_W, EXPANDED_H));
     } catch (e) {
       console.error("Failed to resize bubble window:", e);
     }
     setTimeout(() => inputRef.current?.focus(), 350);
-  }, [expanded, bubbleStyle, clearTimer, confirmed, countdown]);
+  }, [expanded, bubbleStyle, clearTimer, confirmed, countdown, getCircleExpandLeftDelta]);
 
   // Collapse memo panel back to circle, resume countdown from snapshot
   const collapseCapsule = useCallback(async () => {
@@ -209,10 +229,10 @@ export default function BubbleView() {
       const scale = await win.scaleFactor();
       const pos = await win.outerPosition();
       const heightDiff = EXPANDED_H - CIRCLE_WIN_H;
-      await win.setPosition(new LogicalPosition(pos.x / scale, pos.y / scale + heightDiff));
-      await win.setSize(new LogicalSize(CAPSULE_W, CIRCLE_WIN_H));
+      await win.setPosition(new LogicalPosition(pos.x / scale - getCircleExpandLeftDelta(), pos.y / scale + heightDiff));
+      await win.setSize(new LogicalSize(COLLAPSED_CIRCLE_W, CIRCLE_WIN_H));
     } catch {}
-  }, [expanded, confirmed]);
+  }, [expanded, confirmed, getCircleExpandLeftDelta]);
 
   // On mount: fetch pending data + bubble style + default_action
   useEffect(() => {
@@ -660,7 +680,7 @@ export default function BubbleView() {
       <div
         className="select-none"
         style={{
-          width: CAPSULE_W,
+          width: COLLAPSED_CIRCLE_W,
           height: CIRCLE_WIN_H,
           background: "transparent",
           display: "flex",

@@ -29,6 +29,19 @@ impl ScreenshotWatcher {
     }
 
     pub fn get_screenshot_dir() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(pictures) = dirs::picture_dir() {
+                let screenshots = pictures.join("Screenshots");
+                if screenshots.exists() {
+                    return screenshots;
+                }
+                return pictures;
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
         // Try to read macOS screenshot location preference
         if let Ok(output) = std::process::Command::new("defaults")
             .args(["read", "com.apple.screencapture", "location"])
@@ -44,9 +57,10 @@ impl ScreenshotWatcher {
                 }
             }
         }
+        }
 
         // Fall back to Desktop
-        dirs::desktop_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
+        dirs::desktop_dir().unwrap_or_else(std::env::temp_dir)
     }
 
     pub fn start(&self, app: AppHandle) {
@@ -141,9 +155,11 @@ impl ScreenshotWatcher {
             .unwrap_or_default();
 
         let is_image = matches!(ext.as_str(), "png" | "jpg" | "jpeg");
-        let is_screenshot_name = filename.starts_with("Screenshot")
-            || filename.starts_with("Screen Shot")
-            || filename.starts_with("截屏");
+        let lower = filename.to_lowercase();
+        let is_screenshot_name = lower.starts_with("screenshot")
+            || lower.starts_with("screen shot")
+            || filename.starts_with("\u{622a}\u{5c4f}")
+            || filename.starts_with("\u{5c4f}\u{5e55}\u{622a}\u{56fe}");
 
         is_image && is_screenshot_name
     }

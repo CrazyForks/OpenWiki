@@ -68,16 +68,21 @@ pub fn run() {
             // The Swift OCR helper is pre-compiled at build time and shipped
             // as a Tauri resource, so end users don't need Xcode Command Line Tools.
             //
+            #[cfg(target_os = "macos")]
             if let Ok(resource_dir) = app.path().resource_dir() {
                 let ocr_bin = resource_dir.join("openwiki_ocr_bin");
                 log::info!("[OCR] Registered bundled helper at {}", ocr_bin.display());
                 crate::capture::ocr::init_ocr_binary_path(ocr_bin);
-            } else {
-                log::warn!("[OCR] Could not resolve resource_dir at startup");
             }
+            #[cfg(target_os = "windows")]
+            log::info!("[OCR] Windows OCR uses the built-in Windows Runtime OCR engine");
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            log::info!("[OCR] OCR is disabled on this platform");
 
-            // --- Apply macOS vibrancy + auto-hide on blur ---
+            // --- Apply native spotlight styling + auto-hide on blur ---
             if let Some(spotlight_win) = app.get_webview_window("spotlight") {
+                #[cfg(target_os = "macos")]
+                {
                 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
                 let _ = apply_vibrancy(
                     &spotlight_win,
@@ -85,6 +90,7 @@ pub fn run() {
                     None,
                     Some(22.0),
                 );
+                }
 
                 // Hide spotlight when it loses focus (user clicked elsewhere).
                 // This is more reliable than JS onFocusChanged which can stop
@@ -279,6 +285,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+
+            #[cfg(target_os = "macos")]
+            {
             // Handle Dock icon click on macOS: show main window only if it's hidden.
             // When bubble closes, macOS fires Reopen because no visible windows remain.
             // We only respond if the main window is actually hidden (user closed it),
@@ -288,6 +299,7 @@ pub fn run() {
                 if !is_reopen_suppressed(app) {
                     show_main_window(app, None);
                 }
+            }
             }
         });
 }
@@ -303,13 +315,7 @@ fn trigger_spotlight_capture(app: &tauri::AppHandle) {
 
     let app_clone = app.clone();
     std::thread::spawn(move || {
-        // Step 1: Simulate Cmd+C via osascript
-        let _ = std::process::Command::new("osascript")
-            .args([
-                "-e",
-                r#"tell application "System Events" to keystroke "c" using command down"#,
-            ])
-            .output();
+        simulate_copy_shortcut();
 
         // Step 2: Wait for clipboard to update
         std::thread::sleep(std::time::Duration::from_millis(150));
@@ -385,8 +391,38 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<String> {
     }
 }
 
+fn simulate_copy_shortcut() {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                r#"tell application "System Events" to keystroke "c" using command down"#,
+            ])
+            .output();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut command = std::process::Command::new("powershell");
+        command
+            .creation_flags(CREATE_NO_WINDOW)
+            .args([
+            "-NoProfile",
+            "-Command",
+            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^c')",
+        ]);
+        let _ = command.output();
+    }
+}
+
 /// Detect the frontmost application on macOS.
 fn detect_frontmost_app() -> String {
+    #[cfg(target_os = "macos")]
+    {
     match std::process::Command::new("osascript")
         .args([
             "-e",
@@ -400,6 +436,44 @@ fn detect_frontmost_app() -> String {
         }
         _ => "Unknown".to_string(),
     }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        detect_frontmost_window_title()
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "Unknown".to_string()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_frontmost_window_title() -> String {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+    };
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return "Unknown".to_string();
+        }
+        let len = GetWindowTextLengthW(hwnd);
+        if len <= 0 {
+            return "Unknown".to_string();
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        if copied <= 0 {
+            return "Unknown".to_string();
+        }
+        let title = String::from_utf16_lossy(&buf[..copied as usize])
+            .trim()
+            .to_string();
+        if title.is_empty() { "Unknown".to_string() } else { title }
+    }
 }
 
 fn suppress_reopen(app: &tauri::AppHandle, duration: Duration) {
@@ -409,6 +483,7 @@ fn suppress_reopen(app: &tauri::AppHandle, duration: Duration) {
     };
 }
 
+#[cfg(target_os = "macos")]
 fn is_reopen_suppressed(app: &tauri::AppHandle) -> bool {
     let suppress_arc = app.state::<AppState>().suppress_reopen_until.clone();
     let Ok(mut guard) = suppress_arc.lock() else {
@@ -425,6 +500,7 @@ fn is_reopen_suppressed(app: &tauri::AppHandle) -> bool {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn should_show_main_on_reopen(main_hidden: bool, reopen_suppressed: bool) -> bool {
     main_hidden && !reopen_suppressed
 }

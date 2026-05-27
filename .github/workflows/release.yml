@@ -6,6 +6,79 @@ on:
       - 'v*'
 
 jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Prepare bundled document converter
+        shell: pwsh
+        run: ./src-tauri/scripts/setup_markitdown.ps1
+
+      - name: Enable updater artifacts when signing key is configured
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host "TAURI_SIGNING_PRIVATE_KEY is not configured; updater artifacts stay disabled."
+            exit 0
+          }
+          $path = "src-tauri/tauri.conf.json"
+          $json = Get-Content $path -Raw | ConvertFrom-Json
+          $json.bundle.createUpdaterArtifacts = $true
+          $json | ConvertTo-Json -Depth 100 | Set-Content $path -Encoding UTF8
+
+      - name: Prepare release body
+        id: release_body
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notesFile = "release-notes/$tag.md"
+          $body = if (Test-Path $notesFile) {
+            Get-Content $notesFile -Raw
+          } else {
+            "OpenWiki $tag Released!`n`nSee the repository for details."
+          }
+          "body<<RELEASE_BODY_EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "RELEASE_BODY_EOF" >> $env:GITHUB_OUTPUT
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'OpenWiki ${{ github.ref_name }}'
+          releaseBody: ${{ steps.release_body.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+
   build-macos:
     name: Build macOS (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
@@ -113,6 +186,24 @@ jobs:
             fi
             echo "${EOF_MARKER}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Enable updater artifacts when signing key is configured
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is not configured; updater artifacts stay disabled."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("src-tauri/tauri.conf.json")
+          data = json.loads(path.read_text())
+          data["bundle"]["createUpdaterArtifacts"] = True
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

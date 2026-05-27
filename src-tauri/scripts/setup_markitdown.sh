@@ -32,8 +32,12 @@ rm -f "${BIN_DIR}/${APP_NAME}"
   "${SCRIPT_DIR}/markitdown_converter.py"
 
 TEST_DOC="$(mktemp)"
-printf 'OpenWiki MarkItDown smoke test\n' > "${TEST_DOC}"
-"${BIN_DIR}/${APP_NAME}" "${TEST_DOC}" >/dev/null
+printf 'OpenWiki MarkItDown smoke test\n中文烟测\n' > "${TEST_DOC}"
+SMOKE_OUTPUT="$("${BIN_DIR}/${APP_NAME}" "${TEST_DOC}")"
+if [[ "${SMOKE_OUTPUT}" != *"OpenWiki MarkItDown smoke test"* ]]; then
+  echo "MarkItDown smoke test did not return the expected text" >&2
+  exit 1
+fi
 rm -f "${TEST_DOC}"
 
 cat > "${BUNDLE_DIR}/VERSION.txt" <<EOF

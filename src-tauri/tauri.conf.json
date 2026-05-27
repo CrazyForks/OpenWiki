@@ -10,19 +10,16 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
         "title": "",
-        "hiddenTitle": true,
         "url": "/",
         "width": 1200,
         "height": 850,
         "resizable": true,
         "decorations": true,
         "transparent": true,
-        "titleBarStyle": "Overlay",
         "visible": false,
         "center": true
       },
@@ -51,7 +48,7 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -62,8 +59,7 @@
     ],
     "resources": {
       "scripts/*": "scripts/",
-      "resources/markitdown/**/*": "markitdown/",
-      "resources/openwiki_ocr_bin": "openwiki_ocr_bin"
+      "resources/markitdown/**/*": "markitdown/"
     },
     "macOS": {
       "infoPlist": "./Info.plist",

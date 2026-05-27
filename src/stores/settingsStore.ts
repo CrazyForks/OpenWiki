@@ -156,6 +156,10 @@ const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
   "bottom-right", "bottom-center", "bottom-left",
   "top-right", "top-center", "top-left",
 ];
+const DEFAULT_SCREENSHOT_DIR =
+  typeof navigator !== "undefined" && /\bWindows\b/i.test(navigator.userAgent)
+    ? "%USERPROFILE%\\Pictures\\Screenshots"
+    : "~/Library/Application Support/com.openwiki.app/screenshots";
 
 // Track the current system theme listener so we can clean it up when theme changes
 let systemThemeCleanup: (() => void) | null = null;
@@ -292,7 +296,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   urlReadingEnabled: true,
   radarIntervalDays: 3,
   countdownDuration: 5,
-  screenshotDir: "~/Library/Application Support/com.openwiki.app/screenshots",
+  screenshotDir: DEFAULT_SCREENSHOT_DIR,
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
@@ -379,7 +383,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
         screenshotDir:
           settings.screenshot_dir ||
-          "~/Library/Application Support/com.openwiki.app/screenshots",
+          DEFAULT_SCREENSHOT_DIR,
         isLoaded: true,
       });
 

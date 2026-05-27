@@ -570,8 +570,12 @@ fn show_bubble_window(app: &AppHandle) {
     };
 
     let is_circle = bubble_style == "circle";
-    // Circle mode: 64px height (48px circle + 16px padding for bounce animation)
-    let win_w: f64 = if is_circle { 320.0 } else { 340.0 };
+    // Circle mode: 64px height (48px circle + 16px padding for bounce animation).
+    // On Windows, transparent WebView windows can still show the native
+    // rectangular window/shadow bounds, so keep the collapsed circle window
+    // physically tight and only expand it from the frontend when memo UI opens.
+    let circle_win_w: f64 = if cfg!(target_os = "windows") { 64.0 } else { 320.0 };
+    let win_w: f64 = if is_circle { circle_win_w } else { 340.0 };
     let win_h: f64 = if is_circle { 64.0 } else { 72.0 };
 
     // Determine position based on bubble_position setting
@@ -639,6 +643,7 @@ fn show_bubble_window(app: &AppHandle) {
         .resizable(false)
         .decorations(false)
         .transparent(true)
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)

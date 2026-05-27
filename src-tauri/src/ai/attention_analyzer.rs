@@ -1385,7 +1385,7 @@ mod tests {
             .map(|i| {
                 (
                     format!("id-{}", i),
-                    Some("a".repeat(1000)),
+                    Some("a".repeat(4000)),
                     Some(format!("https://example.com/{}", i)),
                     "2024-03-25".to_string(),
                 )
@@ -1396,8 +1396,10 @@ mod tests {
         assert!(!system.is_empty());
         assert!(user.contains("[0]"));
         assert!(user.contains("[4]"));
-        assert!(user.contains(&"a".repeat(500)));
-        assert!(!user.contains(&"a".repeat(501)));
+        assert!(user.contains(&"a".repeat(3000)));
+        for line in user.lines().filter(|line| line.starts_with('[')) {
+            assert!(!line.contains(&"a".repeat(3001)));
+        }
     }
 
     #[test]

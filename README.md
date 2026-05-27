@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/kdsz001/OpenWiki/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-F97316?style=flat-square" alt="License"></a>
   <a href="https://github.com/kdsz001/OpenWiki/releases"><img src="https://img.shields.io/github/v/release/kdsz001/OpenWiki?style=flat-square&color=F97316" alt="Release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS-F97316?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-F97316?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/PRs-welcome-F97316?style=flat-square" alt="PRs Welcome">
 </p>
 
@@ -39,7 +39,7 @@
 - **Only content you actively choose to keep gets saved** — no silent hoarding
 - Supports text, images, and URLs with automatic source app detection
 - Fetches full article content from WeChat, X/Twitter, and other URLs
-- `⌘⇧C` global shortcut to manually trigger the capture window
+- `⌘⇧C` on macOS or `Ctrl+Shift+C` on Windows to manually trigger the capture window
 
 ### 📂 Content Management
 - Filter by type (text / image / link) and time range
@@ -66,7 +66,7 @@
 
 ### 🖥 Desktop Experience
 - System tray — closing the window keeps the app running
-- `⌘⇧Y` global shortcut to show the main window
+- `⌘⇧Y` on macOS or `Ctrl+Shift+Y` on Windows to show the main window
 - Dark / Light / System theme
 - MCP protocol integration — connect to Claude Desktop
 
@@ -74,16 +74,30 @@
 
 - macOS (Apple Silicon): download `OpenWiki_X.Y.Z_aarch64.dmg`
 - macOS (Intel): download `OpenWiki_X.Y.Z_x64.dmg`
+- Windows (x64): download `OpenWiki_X.Y.Z_x64-setup.exe` (recommended) or `OpenWiki_X.Y.Z_x64_en-US.msi`
 
 👉 [Go to Releases](https://github.com/kdsz001/OpenWiki/releases)
 
 ### ⚠️ First Launch Guide (Important)
 
-The app is not signed with an Apple Developer certificate, so macOS will block it. Follow these steps:
+Choose the steps for your operating system.
+
+#### macOS
+
+The app is not signed with an Apple Developer certificate, so macOS may block it:
 
 1. Open the `.dmg` and drag OpenWiki into the Applications folder
 2. **Open Terminal and run `xattr -cr /Applications/OpenWiki.app`** to allow the app to run
 3. Launch the app and click "Allow" in the authorization prompt
+4. Go to Settings → AI to configure your AI provider
+
+#### Windows
+
+The Windows build is unsigned, so Microsoft Defender SmartScreen may warn on first launch:
+
+1. Run `OpenWiki_X.Y.Z_x64-setup.exe`
+2. If SmartScreen appears, choose **More info** → **Run anyway**
+3. Launch OpenWiki from the Start menu or desktop shortcut
 4. Go to Settings → AI to configure your AI provider
 
 ### Optional Dependencies
@@ -99,8 +113,9 @@ These features require additional tools. Other features work without them:
 ### Prerequisites
 - Node.js 18+
 - Rust (latest stable)
-- macOS
-- Xcode Command Line Tools (`xcode-select --install`)
+- macOS 13+ or Windows 10/11
+- macOS: Xcode Command Line Tools (`xcode-select --install`)
+- Windows: Microsoft C++ Build Tools / Visual Studio Build Tools and WebView2 Runtime
 
 ### Getting Started
 
@@ -117,6 +132,16 @@ npm run tauri dev
 
 # Build the app
 npm run tauri build
+```
+
+Before creating release bundles, prepare the bundled document converter:
+
+```bash
+# macOS / Linux
+./src-tauri/scripts/setup_markitdown.sh
+
+# Windows PowerShell
+./src-tauri/scripts/setup_markitdown.ps1
 ```
 
 ## Contributing

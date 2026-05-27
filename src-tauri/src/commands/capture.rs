@@ -254,6 +254,16 @@ fn markitdown_command_candidates(app: &tauri::AppHandle) -> Vec<(String, Vec<Str
 
     if let Ok(resource_dir) = app.path().resource_dir() {
         for path in [
+            #[cfg(target_os = "windows")]
+            resource_dir.join("markitdown/bin/openwiki-markitdown.exe"),
+            #[cfg(target_os = "windows")]
+            resource_dir.join("markitdown/openwiki-markitdown.exe"),
+            #[cfg(target_os = "windows")]
+            resource_dir.join("markitdown/venv/Scripts/markitdown.exe"),
+            #[cfg(target_os = "windows")]
+            resource_dir.join("resources/markitdown/bin/openwiki-markitdown.exe"),
+            #[cfg(target_os = "windows")]
+            resource_dir.join("resources/markitdown/venv/Scripts/markitdown.exe"),
             resource_dir.join("markitdown/bin/openwiki-markitdown"),
             resource_dir.join("markitdown/openwiki-markitdown"),
             resource_dir.join("markitdown/venv/bin/markitdown"),
@@ -265,6 +275,14 @@ fn markitdown_command_candidates(app: &tauri::AppHandle) -> Vec<(String, Vec<Str
     }
 
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        #[cfg(target_os = "windows")]
+        candidates.push((
+            Path::new(&manifest_dir)
+                .join("resources/markitdown/bin/openwiki-markitdown.exe")
+                .to_string_lossy()
+                .to_string(),
+            Vec::new(),
+        ));
         candidates.push((
             Path::new(&manifest_dir)
                 .join("resources/markitdown/bin/openwiki-markitdown")
@@ -282,26 +300,66 @@ fn markitdown_command_candidates(app: &tauri::AppHandle) -> Vec<(String, Vec<Str
     }
 
     for path in [
+        #[cfg(target_os = "windows")]
+        "markitdown.exe",
+        #[cfg(target_os = "windows")]
+        "openwiki-markitdown.exe",
         "markitdown",
+        #[cfg(not(target_os = "windows"))]
         "/opt/homebrew/bin/markitdown",
+        #[cfg(not(target_os = "windows"))]
         "/usr/local/bin/markitdown",
     ] {
         candidates.push((path.to_string(), Vec::new()));
     }
 
     for python in [
-        "python3",
+        #[cfg(target_os = "windows")]
+        "py",
+        #[cfg(target_os = "windows")]
         "python",
+        #[cfg(not(target_os = "windows"))]
+        "python3",
+        #[cfg(not(target_os = "windows"))]
+        "python",
+        #[cfg(not(target_os = "windows"))]
         "/opt/homebrew/bin/python3",
+        #[cfg(not(target_os = "windows"))]
         "/usr/local/bin/python3",
     ] {
+        let args = if cfg!(target_os = "windows") && python == "py" {
+            vec![
+                "-3".to_string(),
+                "-m".to_string(),
+                "markitdown".to_string(),
+            ]
+        } else {
+            vec!["-m".to_string(), "markitdown".to_string()]
+        };
         candidates.push((
             python.to_string(),
-            vec!["-m".to_string(), "markitdown".to_string()],
+            args,
         ));
     }
 
     candidates
+}
+
+fn command_path_missing(command: &str) -> bool {
+    let looks_like_path =
+        command.contains('/') || command.contains('\\') || Path::new(command).is_absolute();
+    looks_like_path && !Path::new(command).exists()
+}
+
+fn hidden_command(command: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(command);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
 }
 
 fn convert_document_with_markitdown(app: &tauri::AppHandle, path: &Path) -> Result<String, String> {
@@ -309,13 +367,13 @@ fn convert_document_with_markitdown(app: &tauri::AppHandle, path: &Path) -> Resu
     let mut attempted = Vec::new();
 
     for (command, mut args) in markitdown_command_candidates(app) {
-        if command.contains('/') && !Path::new(&command).exists() {
+        if command_path_missing(&command) {
             attempted.push(command);
             continue;
         }
 
         args.push(file_arg.clone());
-        let output = match std::process::Command::new(&command).args(&args).output() {
+        let output = match hidden_command(&command).args(&args).output() {
             Ok(output) => output,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 attempted.push(command);

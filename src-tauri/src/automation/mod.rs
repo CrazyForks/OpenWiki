@@ -14,10 +14,13 @@
 //! act accordingly (quiet success, or a red denial banner + repair flow).
 
 use std::sync::Arc;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
+use tauri::{AppHandle, State};
 
 use crate::commands::capture::AppState;
 use crate::storage::database::Database;
@@ -30,10 +33,12 @@ const SETTING_LAST_STATUS: &str = "automation.last_status";
 
 /// Minimal AppleScript that needs Automation permission but does nothing
 /// observable. If this succeeds, we have permission; if it errors, we don't.
+#[cfg(target_os = "macos")]
 const PROBE_SCRIPT: &str = r#"tell application "System Events" to return 1"#;
 
 /// How long to wait before the startup detection runs — gives the UI time
 /// to render before a modal pops in the user's face.
+#[cfg(target_os = "macos")]
 const STARTUP_DELAY_SECS: u64 = 2;
 
 // ========== public types ==========
@@ -90,6 +95,16 @@ pub struct AutomationSnapshot {
 /// status after a short delay and emits the appropriate event for the
 /// frontend to react to.
 pub fn spawn_startup_check(app: AppHandle, db: Arc<Database>) {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        persist_initial_shown(&db);
+        persist_status(&db, AutomationStatus::Granted);
+        log::info!("[automation] Apple Events permission not required on this platform");
+        return;
+    }
+
+    #[cfg(target_os = "macos")]
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(STARTUP_DELAY_SECS)).await;
 
@@ -189,12 +204,20 @@ pub fn dismiss_automation_prompt(state: State<'_, AppState>) -> Result<(), Strin
 /// users who previously denied can fix it in one click.
 #[tauri::command]
 pub fn open_automation_settings() -> Result<(), String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
     let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
     std::process::Command::new("open")
         .arg(url)
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("Failed to open Automation settings: {}", e))
+    }
 }
 
 // ========== internals ==========
@@ -240,6 +263,13 @@ fn persist_status(db: &Arc<Database>, status: AutomationStatus) {
 /// system dialog closes (first call) or osascript finishes (subsequent).
 /// Returns `Granted` on success, `Denied` on any failure.
 fn probe_status() -> AutomationStatus {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return AutomationStatus::Granted;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
     let result = std::process::Command::new("osascript")
         .args(["-e", PROBE_SCRIPT])
         .output();
@@ -266,5 +296,6 @@ fn probe_status() -> AutomationStatus {
             log::warn!("[automation] osascript invocation failed: {}", e);
             AutomationStatus::Denied
         }
+    }
     }
 }
