@@ -601,6 +601,7 @@ pub fn save_content_auto(
         wiki_compile_hash: None,
         wiki_assessed_hash: None,
         clean_content: None,
+        category: None,
     };
 
     repo.save_content(&content).map_err(|e| e.to_string())?;
@@ -1517,11 +1518,32 @@ pub fn spawn_summary_task(
         // Resolve locale for summary language
         let locale = crate::locale::resolve_locale(&db);
 
+        // Existing categories steer the AI toward reusing them — categories
+        // should grow organically but slowly (new ones only when nothing fits).
+        let existing_categories = repo.get_distinct_categories().unwrap_or_default();
+        let category_instruction = if crate::locale::is_english(&locale) {
+            if existing_categories.is_empty() {
+                "No categories exist yet — create the first one.".to_string()
+            } else {
+                format!(
+                    "Existing categories: {}. STRONGLY prefer one of these; only create a new category if none of them fits.",
+                    existing_categories.join(", ")
+                )
+            }
+        } else if existing_categories.is_empty() {
+            "目前还没有任何类目，请为这条内容新建第一个类目。".to_string()
+        } else {
+            format!(
+                "已有类目：{}。必须优先从已有类目中选一个；只有都明显不合适时，才新建类目。",
+                existing_categories.join("、")
+            )
+        };
+
         // Send full content to AI (up to 5000 chars, covers most articles)
         let content_for_ai: String = text.chars().take(5000).collect();
         let prompt = if crate::locale::is_english(&locale) {
             format!(
-                "Read the following content and return JSON with three fields:\n\
+                "Read the following content and return JSON with four fields:\n\
                  1. \"tags\": 2-3 specific tags. Each tag MUST contain concrete nouns from the text (names of people, companies, products, methods, technical terms, etc.).\n\
                     Format: \"Concrete noun + core point\", so the reader instantly knows what the content is about.\n\
                     Good tags: \"Musk first-principles rockets\", \"Stripe developer experience flywheel\", \"RAG retrieval-augmented generation\", \"Bridgewater all-weather hedge\"\n\
@@ -1534,13 +1556,16 @@ pub fn spawn_summary_task(
                     Like a smart friend telling you the key points after reading it for you.\n\
                     Structure it: core point first, then key evidence or examples, then conclusion.\n\
                     Don't use phrases like \"the article\" or \"the author\" — speak about the content directly.\n\
-                 Regardless of the source language, write tags/summary/digest in English (keep proper nouns in original form). Return JSON only.\n\
-                 Example: {{\"tags\":[\"Dalio all-weather hedge\",\"Shannon rebalancing arbitrage\"],\"summary\":\"How to buy the dip when markets crash — the key is keeping enough cash on hand\",\"digest\":\"The core tension in investing is wanting high returns without losing money. Dalio's all-weather strategy uses four buckets (stocks, long bonds, commodities, inflation-protected bonds) to diversify risk, surviving any economic regime. Key data: max drawdown over 30 years was only 3.9%, vs over 50% for pure stock portfolios. But the strategy sacrifices upside, averaging 9% annually. Works well for people who don't want to stress and accept moderate returns.\"}}\n\n{}",
+                 4. \"category\": The category (notebook) this content belongs to. {}\n\
+                    Category names must be broad and stable (1-3 words), like notebook titles: \"AI Tools\", \"Trading\", \"Health\". Never invent narrow one-off categories.\n\
+                 Regardless of the source language, write all fields in English (keep proper nouns in original form). Return JSON only.\n\
+                 Example: {{\"tags\":[\"Dalio all-weather hedge\",\"Shannon rebalancing arbitrage\"],\"summary\":\"How to buy the dip when markets crash — the key is keeping enough cash on hand\",\"digest\":\"The core tension in investing is wanting high returns without losing money. Dalio's all-weather strategy uses four buckets (stocks, long bonds, commodities, inflation-protected bonds) to diversify risk, surviving any economic regime. Key data: max drawdown over 30 years was only 3.9%, vs over 50% for pure stock portfolios. But the strategy sacrifices upside, averaging 9% annually. Works well for people who don't want to stress and accept moderate returns.\",\"category\":\"Trading\"}}\n\n{}",
+                category_instruction,
                 content_for_ai
             )
         } else {
             format!(
-                "通读以下全文，返回JSON格式，包含三个字段：\n\
+                "通读以下全文，返回JSON格式，包含四个字段：\n\
                  1. \"tags\": 2-3个具体标签，必须包含文中的具体名词（人名、公司名、产品名、方法名、术语等）。\n\
                     标签格式：\"具体名词+核心观点\"，让人一看就知道这篇讲了什么。\n\
                     好的标签：\"Musk第一性原理造火箭\"、\"Stripe的开发者体验飞轮\"、\"RAG检索增强生成\"、\"桥水全天候策略对冲\"\n\
@@ -1553,8 +1578,11 @@ pub fn spawn_summary_task(
                     像一个聪明的朋友帮你读完后告诉你重点。\n\
                     要有结构感：先说核心观点，再说关键论据或例子，最后说结论。\n\
                     不要用\"本文\"\"作者\"这种书面词，直接说内容本身。\n\
+                 4. \"category\": 这条内容归属的类目（像笔记本的名字）。{}\n\
+                    类目名要宽泛、稳定，2-6个字，例如\"AI 工具\"\"交易投资\"\"健康\"，不要发明只用一次的细碎类目。\n\
                  无论原文是什么语言，都必须用中文简体（专有名词保留原文）。只返回JSON。\n\
-                 示例：{{\"tags\":[\"Dalio全天候策略对冲\",\"Shannon再平衡套利\"],\"summary\":\"教你怎么在股市暴跌时抄底，关键是平时得留够现金\",\"digest\":\"投资的核心矛盾是想要高收益又怕亏钱。Dalio的全天候策略用四个桶（股票、长期债、商品、通胀保护债）来分散风险，不管经济好坏都能活着。关键数据：过去30年回撤最大只有3.9%，而纯股票组合最大回撤超过50%。但这个策略牺牲了上涨空间，年化只有9%左右。适合不想操心、愿意接受中等回报的人。\"}}\n\n{}",
+                 示例：{{\"tags\":[\"Dalio全天候策略对冲\",\"Shannon再平衡套利\"],\"summary\":\"教你怎么在股市暴跌时抄底，关键是平时得留够现金\",\"digest\":\"投资的核心矛盾是想要高收益又怕亏钱。Dalio的全天候策略用四个桶（股票、长期债、商品、通胀保护债）来分散风险，不管经济好坏都能活着。关键数据：过去30年回撤最大只有3.9%，而纯股票组合最大回撤超过50%。但这个策略牺牲了上涨空间，年化只有9%左右。适合不想操心、愿意接受中等回报的人。\",\"category\":\"交易投资\"}}\n\n{}",
+                category_instruction,
                 content_for_ai
             )
         };
@@ -1573,7 +1601,7 @@ pub fn spawn_summary_task(
                 match result {
                     Ok(raw) => {
                         log::info!("Codex OAuth summary generated for {}", content_id);
-                        let (summary, tags, digest) = extract_summary_tags_digest(&raw);
+                        let (summary, tags, digest, category) = extract_summary_tags_digest(&raw);
                         if !summary.is_empty() {
                             let tags_str = tags.join(",");
                             let _ = repo.update_summary_and_tags(
@@ -1581,6 +1609,7 @@ pub fn spawn_summary_task(
                                 &summary,
                                 &tags_str,
                                 &digest,
+                                &category,
                             );
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
@@ -1615,7 +1644,7 @@ pub fn spawn_summary_task(
                 match result {
                     Ok(raw) => {
                         log::info!("Gemini OAuth summary generated for {}", content_id);
-                        let (summary, tags, digest) = extract_summary_tags_digest(&raw);
+                        let (summary, tags, digest, category) = extract_summary_tags_digest(&raw);
                         if !summary.is_empty() {
                             let tags_str = tags.join(",");
                             let _ = repo.update_summary_and_tags(
@@ -1623,6 +1652,7 @@ pub fn spawn_summary_task(
                                 &summary,
                                 &tags_str,
                                 &digest,
+                                &category,
                             );
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
@@ -1684,10 +1714,16 @@ pub fn spawn_summary_task(
                     raw.len(),
                     raw.chars().take(200).collect::<String>()
                 );
-                let (summary, tags, digest) = extract_summary_tags_digest(&raw);
+                let (summary, tags, digest, category) = extract_summary_tags_digest(&raw);
                 if !summary.is_empty() {
                     let tags_str = tags.join(",");
-                    let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
+                    let _ = repo.update_summary_and_tags(
+                        &content_id,
+                        &summary,
+                        &tags_str,
+                        &digest,
+                        &category,
+                    );
                     let _ = app.emit("content-summary-ready", &content_id);
                     maybe_wiki_compile(db.clone(), content_id.clone());
                     log::info!(
@@ -1710,9 +1746,9 @@ pub fn spawn_summary_task(
     });
 }
 
-/// Extract summary, tags, and digest from AI response.
-/// Expected format: {"tags":["标签1","标签2"],"summary":"一句话","digest":"段落总结"}
-fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String) {
+/// Extract summary, tags, digest, and category from AI response.
+/// Expected format: {"tags":["标签1","标签2"],"summary":"一句话","digest":"段落总结","category":"类目"}
+fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String, String) {
     let trimmed = raw.trim();
     // Strip markdown code block wrappers (```json ... ``` or ``` ... ```)
     let cleaned = if trimmed.starts_with("```") {
@@ -1755,8 +1791,19 @@ fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String) {
             .trim()
             .to_string();
 
+        // Category names stay short — anything longer is the AI rambling
+        let category = v
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .trim_matches('"')
+            .chars()
+            .take(24)
+            .collect::<String>();
+
         if !summary.is_empty() {
-            return (summary, tags, digest);
+            return (summary, tags, digest, category);
         }
     }
     // Not JSON — treat as plain text summary
@@ -1764,7 +1811,7 @@ fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String) {
         .trim_matches('"')
         .trim_matches('「')
         .trim_matches('」');
-    (stripped.trim().to_string(), vec![], String::new())
+    (stripped.trim().to_string(), vec![], String::new(), String::new())
 }
 
 /// Spawn an async task to clean URL article content via AI.

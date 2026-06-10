@@ -502,6 +502,7 @@ mod tests {
                 wiki_compile_hash: None,
                 wiki_assessed_hash: None,
                 clean_content: None,
+                category: None,
             }
         };
 

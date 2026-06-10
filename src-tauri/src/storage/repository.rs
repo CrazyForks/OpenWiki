@@ -59,7 +59,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content WHERE is_deleted = 0 ORDER BY captured_at DESC LIMIT ?1 OFFSET ?2"
         )?;
 
@@ -88,6 +88,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -111,7 +112,7 @@ impl Repository {
             .map_err(|e| format!("Lock error: {}", e))?;
         let pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content
              WHERE is_deleted = 0
                AND (raw_text LIKE ?1 OR source_url LIKE ?1 OR source_app LIKE ?1 OR user_note LIKE ?1)
@@ -143,6 +144,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -188,13 +190,15 @@ impl Repository {
         Ok(())
     }
 
-    /// Update the AI-generated summary, tags, and digest for a content item.
+    /// Update the AI-generated summary, tags, digest, and category for a content item.
+    /// An empty category keeps whatever category the item already has.
     pub fn update_summary_and_tags(
         &self,
         id: &str,
         summary: &str,
         tags: &str,
         digest: &str,
+        category: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self
             .db
@@ -202,10 +206,32 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
-            "UPDATE captured_content SET summary = ?1, tags = ?2, digest = ?3, updated_at = datetime('now') WHERE id = ?4",
-            rusqlite::params![summary, tags, digest, id],
+            "UPDATE captured_content SET summary = ?1, tags = ?2, digest = ?3, category = COALESCE(NULLIF(?4, ''), category), updated_at = datetime('now') WHERE id = ?5",
+            rusqlite::params![summary, tags, digest, category, id],
         )?;
         Ok(())
+    }
+
+    /// List distinct categories in use, most frequent first.
+    /// Fed into the summary prompt so the AI reuses existing categories
+    /// instead of inventing near-duplicates.
+    pub fn get_distinct_categories(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT category FROM captured_content \
+             WHERE is_deleted = 0 AND category IS NOT NULL AND category != '' \
+             GROUP BY category ORDER BY COUNT(*) DESC LIMIT 50",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
     }
 
     /// Update the AI-cleaned content and optionally clear wiki hash to trigger recompilation.
@@ -282,7 +308,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1"
         )?;
 
@@ -311,6 +337,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -347,7 +374,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content
              WHERE is_deleted = 0 AND captured_at >= ?1 AND captured_at <= ?2
              ORDER BY captured_at DESC"
@@ -378,6 +405,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -399,7 +427,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content WHERE id = ?1 AND is_deleted = 0"
         )?;
 
@@ -428,6 +456,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -741,7 +770,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content WHERE DATE(captured_at) = ?1 AND is_deleted = 0 ORDER BY captured_at ASC",
         )?;
 
@@ -770,6 +799,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -794,7 +824,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content
              WHERE is_deleted = 0 AND digested_at IS NULL
              ORDER BY captured_at ASC LIMIT ?1"
@@ -825,6 +855,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -846,7 +877,7 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content
              WHERE is_deleted = 0 AND digested_at IS NULL
                AND captured_at >= datetime('now', '-' || ?1 || ' days')
@@ -878,6 +909,7 @@ impl Repository {
                 wiki_compile_hash: row.get(20).unwrap_or(None),
                 wiki_assessed_hash: row.get(21).unwrap_or(None),
                 clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
             })
         })?;
 
@@ -2687,6 +2719,7 @@ mod tests {
             wiki_compile_hash: None,
             wiki_assessed_hash: None,
             clean_content: None,
+            category: None,
         }
     }
 

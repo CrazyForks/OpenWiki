@@ -5,7 +5,8 @@
     "text": "文本",
     "document": "导入内容",
     "image": "图片",
-    "url": "链接"
+    "url": "链接",
+    "uncategorized": "未分类"
   },
   "card": {
     "summary": "摘要",

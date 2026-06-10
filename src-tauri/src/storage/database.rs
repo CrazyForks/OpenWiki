@@ -388,6 +388,21 @@ impl Database {
             [],
         );
 
+        // Migration 017: Add category column to captured_content
+        let has_category: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('captured_content') WHERE name='category'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if !has_category {
+            let migration_017 = include_str!("migrations/017_add_category.sql");
+            conn.execute_batch(migration_017)?;
+            log::info!("Migration 017 applied: added category column");
+        }
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }

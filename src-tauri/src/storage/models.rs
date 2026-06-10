@@ -54,6 +54,7 @@ pub struct CapturedContent {
     pub wiki_compile_hash: Option<String>,
     pub wiki_assessed_hash: Option<String>,
     pub clean_content: Option<String>,
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

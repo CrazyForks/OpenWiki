@@ -5,7 +5,8 @@
     "text": "Text",
     "document": "Imported",
     "image": "Image",
-    "url": "Link"
+    "url": "Link",
+    "uncategorized": "Uncategorized"
   },
   "card": {
     "summary": "Summary",

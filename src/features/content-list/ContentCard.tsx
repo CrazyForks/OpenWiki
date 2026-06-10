@@ -204,10 +204,10 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
               }
             }}
           >
-            {/* Tags */}
-            <TagChips
-              tags={content.tags}
-              analyzing={!content.tags && !!(content.raw_text || ocrText) && (content.raw_text?.length ?? 0) >= 6 && isRecent}
+            {/* Category — the only AI chip on the card; tags moved into the expanded view */}
+            <CategoryChip
+              category={content.category}
+              analyzing={!content.category && !content.tags && !!(content.raw_text || ocrText) && (content.raw_text?.length ?? 0) >= 6 && isRecent}
             />
 
             {/* Image content: thumbnail + summary side by side */}
@@ -424,30 +424,6 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
               </button>
             </div>
           </div>
-            {/* Wiki linked pages */}
-            {linkedWikiPages.length > 0 && (
-              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
-                <span style={{ fontSize: 10, color: "var(--color-text-muted, #A8A29E)" }}>{t("card.linkedKnowledge")}</span>
-                {linkedWikiPages.slice(0, 3).map((wp) => (
-                  <button
-                    key={wp.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.dispatchEvent(new CustomEvent("navigate-to-wiki-page", { detail: { pageId: wp.id } }));
-                    }}
-                    className="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors
-                               hover:bg-orange-100 dark:hover:bg-orange-500/15"
-                    style={{
-                      color: "#F97316",
-                      backgroundColor: "#F9731610",
-                      border: "1px solid #F9731625",
-                    }}
-                  >
-                    {wp.title}
-                  </button>
-                ))}
-              </div>
-            )}
             </div>{/* close content body */}
           </div>{/* close flex row */}
         </div>
@@ -472,6 +448,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
               onClose={() => setTextExpanded(false)}
               imageSrc={fullImageSrc}
               ocrText={ocrText}
+              linkedWikiPages={linkedWikiPages}
             />
           )}
         </AnimatePresence>,
@@ -602,6 +579,27 @@ function AnalyzingChip() {
   );
 }
 
+function CategoryChip({ category, analyzing }: { category?: string; analyzing?: boolean }) {
+  if (!category && analyzing) return <AnalyzingChip />;
+  if (!category) return null;
+  return (
+    <div className="mb-2">
+      <span
+        className="rounded-full px-2.5 py-0.5"
+        style={{
+          fontSize: 12,
+          fontWeight: 500,
+          color: "#F97316",
+          backgroundColor: "#F9731610",
+          border: "1px solid #F9731625",
+        }}
+      >
+        {category}
+      </span>
+    </div>
+  );
+}
+
 function TagChips({ tags, analyzing }: { tags?: string; analyzing?: boolean }) {
   if (!tags && analyzing) return <AnalyzingChip />;
   if (!tags) return null;
@@ -634,6 +632,7 @@ export function FullTextOverlay({
   onClose,
   imageSrc,
   ocrText,
+  linkedWikiPages,
 }: {
   content: CapturedContent;
   copied: boolean;
@@ -641,6 +640,7 @@ export function FullTextOverlay({
   onClose: () => void;
   imageSrc?: string | null;
   ocrText?: string | null;
+  linkedWikiPages?: WikiPage[];
 }) {
   const { t } = useTranslation("content");
   const isImage = content.content_type === "image";
@@ -770,6 +770,32 @@ export function FullTextOverlay({
                     alt="Captured"
                     className="max-w-full max-h-[50vh] rounded-xl border border-white/50 dark:border-white/10 object-contain"
                   />
+                </div>
+              )}
+              {/* Tags — moved here from the card to keep the list view clean */}
+              <TagChips tags={content.tags} />
+              {/* Linked wiki pages */}
+              {linkedWikiPages && linkedWikiPages.length > 0 && (
+                <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+                  <span style={{ fontSize: 10, color: "var(--color-text-muted, #A8A29E)" }}>{t("card.linkedKnowledge")}</span>
+                  {linkedWikiPages.slice(0, 3).map((wp) => (
+                    <button
+                      key={wp.id}
+                      onClick={() => {
+                        onClose();
+                        window.dispatchEvent(new CustomEvent("navigate-to-wiki-page", { detail: { pageId: wp.id } }));
+                      }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors
+                                 hover:bg-orange-100 dark:hover:bg-orange-500/15"
+                      style={{
+                        color: "#F97316",
+                        backgroundColor: "#F9731610",
+                        border: "1px solid #F9731625",
+                      }}
+                    >
+                      {wp.title}
+                    </button>
+                  ))}
                 </div>
               )}
               {/* Digest — paragraph summary */}
