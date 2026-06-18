@@ -143,7 +143,7 @@ fn should_show_confirmation_bubble(event: &serde_json::Value) -> bool {
 async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, app: AppHandle) {
     log::info!("Starting URL fetch task for {} (url={})", content_id, url);
 
-    let reader = UrlReader::new();
+    let reader = UrlReader::with_app(app.clone());
     let locale = crate::locale::resolve_locale(&db);
     let result = reader.fetch_content(&url, &locale).await;
 

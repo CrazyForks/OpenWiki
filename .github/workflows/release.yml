@@ -72,6 +72,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Statically link the MSVC C runtime so the .exe runs on a clean
+          # Windows machine without the Visual C++ Redistributable installed.
+          # Fixes "Windows 安装了打不开" (missing VCRUNTIME140.dll) — issue #22.
+          RUSTFLAGS: "-C target-feature=+crt-static"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'OpenWiki ${{ github.ref_name }}'

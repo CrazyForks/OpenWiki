@@ -1215,7 +1215,7 @@ pub async fn retry_url_fetch(
 
     // Spawn async fetch task
     tauri::async_runtime::spawn(async move {
-        let reader = crate::capture::url_reader::UrlReader::new();
+        let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
@@ -1400,7 +1400,7 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
 
     log::info!("Spawning URL fetch for {} (url={})", content_id, url);
     tauri::async_runtime::spawn(async move {
-        let reader = crate::capture::url_reader::UrlReader::new();
+        let reader = crate::capture::url_reader::UrlReader::with_app(app_clone.clone());
         let locale = crate::locale::resolve_locale(&db_clone);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
