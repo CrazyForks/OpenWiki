@@ -79,6 +79,8 @@
     "supportedLabel": "已支持",
     "futureLabel": "后续再评估",
     "chooseButton": "选择文件",
+    "chooseFolderButton": "选择文件夹",
+    "importingProgress": "正在导入 {{done}} / {{total}}...",
     "noticeWorking": "正在导入",
     "noticeDone": "导入完成",
     "noticeError": "导入失败"
