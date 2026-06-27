@@ -87,7 +87,9 @@ export default function BubbleView() {
   const dismiss = useCallback(async () => {
     const capture = pendingRef.current;
     clearTimer();
-    try { await invoke("dismiss_capture", { imagePath: capture?.image_path ?? null }); } catch {}
+    try { await invoke("dismiss_capture", { imagePath: capture?.image_path ?? null }); } catch {
+      // Best-effort dismiss; the window should still close.
+    }
     await closeWindow();
   }, [clearTimer, closeWindow]);
 
@@ -133,7 +135,9 @@ export default function BubbleView() {
           const leftDelta = bubbleStyle === "circle" ? getCircleExpandLeftDelta() : 0;
           await win.setPosition(new LogicalPosition(pos.x / scale + leftDelta, pos.y / scale - heightDiff));
           await win.setSize(new LogicalSize(CAPSULE_W, EXPANDED_H));
-        } catch {}
+        } catch {
+          // Keep the failure UI usable even if native resize fails.
+        }
       }
       setSaving(false);
       setFailureError(backendError!);
@@ -150,7 +154,9 @@ export default function BubbleView() {
         const heightDiff = EXPANDED_H - CIRCLE_WIN_H;
         await win.setPosition(new LogicalPosition(pos.x / scale - getCircleExpandLeftDelta(), pos.y / scale + heightDiff));
         await win.setSize(new LogicalSize(COLLAPSED_CIRCLE_W, CIRCLE_WIN_H));
-      } catch {}
+      } catch {
+        // Save already succeeded; closing the window is still enough.
+      }
     }
 
     // Show confirmed state — no DOM swap, just CSS transitions on existing elements
@@ -159,9 +165,11 @@ export default function BubbleView() {
 
     // Close window after 1.2 seconds
     setTimeout(async () => {
-      try { await appWindow.current.close(); } catch {}
+      try { await appWindow.current.close(); } catch {
+        // Window may already be gone.
+      }
     }, 1200);
-  }, [saving, confirmed, clearTimer, memo, expanded, bubblePosition, bubbleStyle, getCircleExpandLeftDelta]);
+  }, [saving, confirmed, clearTimer, memo, expanded, bubbleStyle, getCircleExpandLeftDelta]);
 
   // Retry from the failure state: reset failureError + saving, then call
   // confirm() again. confirm() will re-invoke the backend and route to
@@ -231,7 +239,9 @@ export default function BubbleView() {
       const heightDiff = EXPANDED_H - CIRCLE_WIN_H;
       await win.setPosition(new LogicalPosition(pos.x / scale - getCircleExpandLeftDelta(), pos.y / scale + heightDiff));
       await win.setSize(new LogicalSize(COLLAPSED_CIRCLE_W, CIRCLE_WIN_H));
-    } catch {}
+    } catch {
+      // Collapse state is still reflected in React if native resize fails.
+    }
   }, [expanded, confirmed, getCircleExpandLeftDelta]);
 
   // On mount: fetch pending data + bubble style + default_action
@@ -246,7 +256,9 @@ export default function BubbleView() {
           if (secs >= 1 && secs <= 30) { setCountdownMax(secs); setCountdown(secs); }
         }
         if (settings?.default_action === "save") setDefaultAction("save");
-      } catch {}
+      } catch {
+        // Settings are optional for the bubble; defaults are safe.
+      }
       try {
         const data = await invoke<PendingCapture | null>("get_pending_capture");
         if (data) { setPending(data); }

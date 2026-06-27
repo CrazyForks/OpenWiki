@@ -92,7 +92,11 @@ fn xiaoyun_db_path() -> Option<String> {
 /// Checks common paths because Tauri apps launched from Dock don't inherit shell PATH.
 fn is_node_installed() -> bool {
     // First try PATH (works when launched from terminal)
-    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let checker = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
     if std::process::Command::new(checker)
         .arg("node")
         .output()
@@ -181,11 +185,11 @@ fn is_process_running(name: &str) -> bool {
 
     #[cfg(not(target_os = "windows"))]
     {
-    std::process::Command::new("pgrep")
-        .args(["-xi", name])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        std::process::Command::new("pgrep")
+            .args(["-xi", name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     }
 }
 

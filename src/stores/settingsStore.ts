@@ -391,13 +391,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       try {
         const oauthStatus = await invoke<{ logged_in: boolean; email?: string }>("get_openai_oauth_status");
         set((prev) => ({ ...prev, oauthLoggedIn: oauthStatus.logged_in, oauthEmail: oauthStatus.email || "" }));
-      } catch {}
+      } catch {
+        // OAuth status is optional; settings still load without it.
+      }
 
       // Load Gemini OAuth status
       try {
         const geminiStatus = await invoke<{ logged_in: boolean; email?: string }>("get_gemini_oauth_status");
         set((prev) => ({ ...prev, geminiOauthLoggedIn: geminiStatus.logged_in, geminiOauthEmail: geminiStatus.email || "" }));
-      } catch {}
+      } catch {
+        // Gemini OAuth status is optional; settings still load without it.
+      }
     } catch (e) {
       console.error("Failed to load settings from DB:", e);
       applyTheme("system");

@@ -62,6 +62,7 @@ function WikiGraphViewInner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<GNode, GLink>> | null>(null);
   const rafRef = useRef<number>(0);
+  const tickRef = useRef<() => void>(() => {});
   const nodesRef = useRef<GNode[]>([]);
   const linksRef = useRef<GLink[]>([]);
   const camRef = useRef({ x: 0, y: 0, zoom: 1 });
@@ -174,8 +175,12 @@ function WikiGraphViewInner() {
 
   const tick = useCallback(() => {
     draw();
-    rafRef.current = requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tickRef.current);
   }, [draw]);
+
+  useEffect(() => {
+    tickRef.current = tick;
+  }, [tick]);
 
   // Setup simulation
   useEffect(() => {
@@ -188,7 +193,7 @@ function WikiGraphViewInner() {
       .map(e => ({ source: e.source, target: e.target, relation: e.relation, weight: e.weight }));
 
     nodesRef.current = nodes;
-    linksRef.current = links as any;
+    linksRef.current = links;
 
     simRef.current?.stop();
 

@@ -13,6 +13,9 @@ use commands::capture::AppState;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+
+const AUTOSTART_DEFAULT_APPLIED_KEY: &str = "autostart_default_applied";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +37,10 @@ pub fn run() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -119,6 +126,9 @@ pub fn run() {
 
             // --- System Tray ---
             setup_tray(app)?;
+
+            // --- Launch at startup default ---
+            apply_default_autostart_once(app);
 
             // --- Cleanup stale compile locks from interrupted sessions ---
             {
@@ -342,6 +352,44 @@ fn trigger_spotlight_capture(app: &tauri::AppHandle) {
             let _ = win.set_focus();
         }
     });
+}
+
+fn apply_default_autostart_once(app: &mut tauri::App) {
+    let state: tauri::State<'_, AppState> = app.state();
+    let repo = crate::storage::repository::Repository::new(state.db.clone());
+
+    match repo.get_setting(AUTOSTART_DEFAULT_APPLIED_KEY) {
+        Ok(Some(value)) if value == "true" => return,
+        Ok(_) => {}
+        Err(e) => {
+            log::warn!("[autostart] failed to read default marker: {}", e);
+            return;
+        }
+    }
+
+    match app.autolaunch().is_enabled() {
+        Ok(true) => {
+            log::info!("[autostart] already enabled; marking default as applied");
+        }
+        Ok(false) => {
+            if let Err(e) = app.autolaunch().enable() {
+                log::warn!(
+                    "[autostart] failed to enable default launch at startup: {}",
+                    e
+                );
+                return;
+            }
+            log::info!("[autostart] enabled launch at startup by default");
+        }
+        Err(e) => {
+            log::warn!("[autostart] failed to read current status: {}", e);
+            return;
+        }
+    }
+
+    if let Err(e) = repo.update_setting(AUTOSTART_DEFAULT_APPLIED_KEY, "true") {
+        log::warn!("[autostart] failed to persist default marker: {}", e);
+    }
 }
 
 /// Read current clipboard content (text or image).

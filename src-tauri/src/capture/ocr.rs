@@ -144,26 +144,26 @@ pub fn recognize_text(image_path: &str) -> Result<String, String> {
 
     #[cfg(target_os = "macos")]
     {
-    let binary_path = resolve_ocr_binary()?;
+        let binary_path = resolve_ocr_binary()?;
 
-    let output = Command::new(&binary_path)
-        .arg(image_path)
-        .output()
-        .map_err(|e| format!("Failed to run OCR: {}", e))?;
+        let output = Command::new(&binary_path)
+            .arg(image_path)
+            .output()
+            .map_err(|e| format!("Failed to run OCR: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("OCR failed: {}", stderr.trim()));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("OCR failed: {}", stderr.trim()));
+        }
 
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    if text.is_empty() {
-        return Err("未识别到文字内容".to_string());
-    }
+        if text.is_empty() {
+            return Err("未识别到文字内容".to_string());
+        }
 
-    log::info!("[OCR] 识别完成: {} chars from {}", text.len(), image_path);
-    Ok(text)
+        log::info!("[OCR] 识别完成: {} chars from {}", text.len(), image_path);
+        Ok(text)
     }
 }
 
@@ -246,7 +246,11 @@ if ($null -eq $text) {
         return Err("No text recognized".to_string());
     }
 
-    log::info!("[OCR] Windows OCR completed: {} chars from {}", text.len(), image_path);
+    log::info!(
+        "[OCR] Windows OCR completed: {} chars from {}",
+        text.len(),
+        image_path
+    );
     Ok(text)
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, BookOpen, User, FileText, GitCompare, Layers, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
@@ -50,11 +50,7 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const IconComponent = TYPE_ICONS[page.page_type] || BookOpen;
 
-  useEffect(() => {
-    loadSources();
-  }, [page.id]);
-
-  async function loadSources() {
+  const loadSources = useCallback(async () => {
     setLoadingSources(true);
     try {
       const pageSources = await getPageSources(page.id);
@@ -76,7 +72,12 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
       console.error("Failed to load sources:", e);
     }
     setLoadingSources(false);
-  }
+  }, [page.id]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => void loadSources(), 0);
+    return () => window.clearTimeout(id);
+  }, [loadSources]);
 
   const isStale = page.status === "needs_recompile";
 

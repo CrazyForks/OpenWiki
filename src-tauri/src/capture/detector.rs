@@ -143,7 +143,7 @@ fn should_show_confirmation_bubble(event: &serde_json::Value) -> bool {
 async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, app: AppHandle) {
     log::info!("Starting URL fetch task for {} (url={})", content_id, url);
 
-    let reader = UrlReader::new();
+    let reader = UrlReader::with_app(app.clone());
     let locale = crate::locale::resolve_locale(&db);
     let result = reader.fetch_content(&url, &locale).await;
 
@@ -512,6 +512,14 @@ fn show_bubble_without_focus(win: &tauri::WebviewWindow) {
                 // Set window level to floating panel (above normal windows)
                 let floating_level: i64 = 3; // NSFloatingWindowLevel
                 let _: () = objc2::msg_send![ns_window, setLevel: floating_level];
+                // Make the bubble visible over other apps' native fullscreen Spaces.
+                // canJoinAllSpaces (1<<0) shows it in every Space, fullScreenAuxiliary
+                // (1<<8) lets it sit over a fullscreen window, stationary (1<<4) keeps it
+                // put when switching Spaces. Without this the floating level alone keeps
+                // the bubble stuck in the desktop Space — invisible while a fullscreen
+                // app is active, only reappearing after switching back to the desktop.
+                let collection_behavior: u64 = (1u64 << 0) | (1u64 << 4) | (1u64 << 8);
+                let _: () = objc2::msg_send![ns_window, setCollectionBehavior: collection_behavior];
                 // Mark as non-activating panel — prevents focus steal entirely
                 // NSWindowStyleMaskNonactivatingPanel = 1 << 7 = 128
                 let style_mask: u64 = objc2::msg_send![ns_window, styleMask];
@@ -574,7 +582,11 @@ fn show_bubble_window(app: &AppHandle) {
     // On Windows, transparent WebView windows can still show the native
     // rectangular window/shadow bounds, so keep the collapsed circle window
     // physically tight and only expand it from the frontend when memo UI opens.
-    let circle_win_w: f64 = if cfg!(target_os = "windows") { 64.0 } else { 320.0 };
+    let circle_win_w: f64 = if cfg!(target_os = "windows") {
+        64.0
+    } else {
+        320.0
+    };
     let win_w: f64 = if is_circle { circle_win_w } else { 340.0 };
     let win_h: f64 = if is_circle { 64.0 } else { 72.0 };
 

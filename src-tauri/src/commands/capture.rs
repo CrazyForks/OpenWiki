@@ -328,18 +328,11 @@ fn markitdown_command_candidates(app: &tauri::AppHandle) -> Vec<(String, Vec<Str
         "/usr/local/bin/python3",
     ] {
         let args = if cfg!(target_os = "windows") && python == "py" {
-            vec![
-                "-3".to_string(),
-                "-m".to_string(),
-                "markitdown".to_string(),
-            ]
+            vec!["-3".to_string(), "-m".to_string(), "markitdown".to_string()]
         } else {
             vec!["-m".to_string(), "markitdown".to_string()]
         };
-        candidates.push((
-            python.to_string(),
-            args,
-        ));
+        candidates.push((python.to_string(), args));
     }
 
     candidates
@@ -1216,7 +1209,7 @@ pub async fn retry_url_fetch(
 
     // Spawn async fetch task
     tauri::async_runtime::spawn(async move {
-        let reader = crate::capture::url_reader::UrlReader::new();
+        let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
@@ -1401,7 +1394,7 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
 
     log::info!("Spawning URL fetch for {} (url={})", content_id, url);
     tauri::async_runtime::spawn(async move {
-        let reader = crate::capture::url_reader::UrlReader::new();
+        let reader = crate::capture::url_reader::UrlReader::with_app(app_clone.clone());
         let locale = crate::locale::resolve_locale(&db_clone);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
@@ -1811,7 +1804,12 @@ fn extract_summary_tags_digest(raw: &str) -> (String, Vec<String>, String, Strin
         .trim_matches('"')
         .trim_matches('「')
         .trim_matches('」');
-    (stripped.trim().to_string(), vec![], String::new(), String::new())
+    (
+        stripped.trim().to_string(),
+        vec![],
+        String::new(),
+        String::new(),
+    )
 }
 
 /// Spawn an async task to clean URL article content via AI.

@@ -115,6 +115,10 @@
     "summaryCopied": "✓ 已复制到剪贴板",
     "summaryCopyBtn": "复制最近内容摘要"
   },
+  "system": {
+    "launchAtStartup": "开机自动启动",
+    "launchAtStartupDesc": "登录系统后自动启动 OpenWiki，默认开启，可随时关闭"
+  },
   "storage": {
     "title": "存储",
     "totalItems": "已保存内容",

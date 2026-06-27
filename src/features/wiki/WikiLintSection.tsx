@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, Check, Trash2, RotateCcw, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { WikiLintResult } from "../../types/wiki";
@@ -20,16 +20,19 @@ export function WikiLintSection({ compact = false }: WikiLintSectionProps) {
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState<number | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const r = await getWikiLintResults();
       setResults(r);
     } catch (e) {
       console.error("Failed to load lint results:", e);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const id = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(id);
+  }, [load]);
 
   const handleRefresh = async () => {
     setLoading(true);

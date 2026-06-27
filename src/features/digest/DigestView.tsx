@@ -17,12 +17,18 @@ export function DigestView() {
 
   useEffect(() => {
     if (!isLoading && remaining > 0 && digestedToday === 0) {
-      if (!localStorage.getItem("xiaoyun_digest_onboarding_seen")) setShowOnboarding(true);
+      if (!localStorage.getItem("xiaoyun_digest_onboarding_seen")) {
+        const id = window.setTimeout(() => setShowOnboarding(true), 0);
+        return () => window.clearTimeout(id);
+      }
     }
   }, [isLoading, remaining, digestedToday]);
 
   useEffect(() => {
-    if (currentIndex >= items.length && items.length > 0) setCurrentIndex(items.length - 1);
+    if (currentIndex >= items.length && items.length > 0) {
+      const id = window.setTimeout(() => setCurrentIndex(items.length - 1), 0);
+      return () => window.clearTimeout(id);
+    }
   }, [items.length, currentIndex]);
 
   const slide = (dir: "left" | "right", cb: () => void) => {

@@ -1,4 +1,4 @@
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use std::time::Duration;
 
 const JINA_READER_BASE: &str = "https://r.jina.ai/";
@@ -15,10 +15,24 @@ pub struct UrlReadResult {
 
 pub struct UrlReader {
     http_client: Client,
+    /// Tauri app handle, needed for the headless-WebView fallback used on
+    /// JS-rendered / anti-bot pages (e.g. Zhihu). `None` outside a GUI context.
+    app: Option<tauri::AppHandle>,
 }
 
 impl UrlReader {
     pub fn new() -> Self {
+        Self::build(None)
+    }
+
+    /// Construct a reader that can fall back to a real-browser (headless
+    /// WebView) render for pages plain HTTP / Jina cannot read — JS-rendered
+    /// or anti-bot sites such as Zhihu.
+    pub fn with_app(app: tauri::AppHandle) -> Self {
+        Self::build(Some(app))
+    }
+
+    fn build(app: Option<tauri::AppHandle>) -> Self {
         let http_client = match Client::builder()
             .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS))
             .build()
@@ -29,7 +43,7 @@ impl UrlReader {
                 Client::new()
             }
         };
-        UrlReader { http_client }
+        UrlReader { http_client, app }
     }
 
     /// Smart fetch: pick the best method based on URL domain.
@@ -125,16 +139,46 @@ impl UrlReader {
             }
         }
 
-        // ── General: Jina Reader → direct HTML fallback ──
+        // Anti-bot / JS-only sites (e.g. Zhihu): plain HTTP returns a 403
+        // challenge page and Jina is blocked too, so skip straight to the
+        // headless WebView, which runs the page's JS like a real browser.
+        if prefers_browser(clean_url) {
+            if let Some(app) = self.app.as_ref() {
+                log::info!("[Browser] 反爬站点直连无头 WebView: {}", clean_url);
+                match fetch_via_browser(app, clean_url).await {
+                    Ok(r) => return Ok(r),
+                    Err(e) => log::warn!("[Browser] 失败 ({}), 回退通用路径", e),
+                }
+            }
+        }
+
+        // ── General: Jina Reader → direct HTML → headless WebView ──
         log::info!("[Jina] 通用读取: {}", clean_url);
         match self.fetch_via_jina(clean_url).await {
             Ok(r) => Ok(r),
             Err(jina_err) => {
                 log::warn!("[Jina] 失败 ({}), 尝试直接抓取", jina_err);
                 // Fallback: direct HTML fetch + tag stripping
-                self.fetch_direct_html(clean_url)
-                    .await
-                    .map_err(|html_err| format!("Jina: {} | Direct: {}", jina_err, html_err))
+                match self.fetch_direct_html(clean_url).await {
+                    Ok(r) => Ok(r),
+                    Err(html_err) => {
+                        // Last resort: render in a real browser (handles JS +
+                        // anti-bot). Only available when a GUI app handle exists.
+                        if let Some(app) = self.app.as_ref() {
+                            log::info!("[Browser] 通用兜底无头 WebView: {}", clean_url);
+                            match fetch_via_browser(app, clean_url).await {
+                                Ok(r) => return Ok(r),
+                                Err(browser_err) => {
+                                    return Err(format!(
+                                        "Jina: {} | Direct: {} | Browser: {}",
+                                        jina_err, html_err, browser_err
+                                    ))
+                                }
+                            }
+                        }
+                        Err(format!("Jina: {} | Direct: {}", jina_err, html_err))
+                    }
+                }
             }
         }
     }
@@ -343,13 +387,15 @@ impl UrlReader {
     }
 
     async fn fetch_github_repo(&self, owner: &str, repo: &str) -> Result<UrlReadResult, String> {
+        let github_token = github_api_token_from_env();
+        if github_token.is_some() {
+            log::info!("[GitHub] 使用认证请求提高 API 限额");
+        }
+
         // 1. Get repo info
         let repo_url = format!("https://api.github.com/repos/{}/{}", owner, repo);
         let repo_json: serde_json::Value = self
-            .http_client
-            .get(&repo_url)
-            .header("User-Agent", "OpenWiki/0.1")
-            .header("Accept", "application/vnd.github.v3+json")
+            .github_api_request(&repo_url, github_token.as_deref())
             .send()
             .await
             .map_err(|e| format!("GitHub API: {}", e))?
@@ -377,10 +423,7 @@ impl UrlReader {
         // 2. Try to get README
         let readme_url = format!("https://api.github.com/repos/{}/{}/readme", owner, repo);
         let readme_content = match self
-            .http_client
-            .get(&readme_url)
-            .header("User-Agent", "OpenWiki/0.1")
-            .header("Accept", "application/vnd.github.v3+json")
+            .github_api_request(&readme_url, github_token.as_deref())
             .send()
             .await
         {
@@ -417,6 +460,19 @@ impl UrlReader {
         let title = Some(format!("{} — {}", repo_name, description));
         log::info!("[GitHub] 成功: {} chars", content.len());
         Ok(UrlReadResult { content, title })
+    }
+
+    fn github_api_request(&self, url: &str, token: Option<&str>) -> RequestBuilder {
+        let request = self
+            .http_client
+            .get(url)
+            .header("User-Agent", "OpenWiki/0.1")
+            .header("Accept", "application/vnd.github.v3+json");
+
+        match token {
+            Some(token) => request.header("Authorization", format!("Bearer {}", token)),
+            None => request,
+        }
     }
 
     // ─── Reddit ────────────────────────────────────────────────────
@@ -980,6 +1036,165 @@ impl UrlReader {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Headless-WebView fallback (JS-rendered / anti-bot pages, e.g. Zhihu)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Sentinel host the injected script "navigates" to in order to hand the
+/// extracted content back to Rust. The page never actually goes there — the
+/// navigation handler intercepts and cancels it.
+const BROWSER_SENTINEL_HOST: &str = "openwiki-extract.local";
+const BROWSER_FETCH_TIMEOUT_SECS: u64 = 25;
+
+/// Domains that block plain HTTP / Jina (anti-bot) or only render via JS, so
+/// they go straight to the WebView. Kept deliberately small — add a domain
+/// only once it's confirmed unreadable by the cheaper methods.
+fn prefers_browser(url: &str) -> bool {
+    url.contains("zhihu.com/")
+}
+
+/// Injected into every page load. Polls for the article body (anti-bot
+/// challenges resolve on their own inside a real browser), then ships
+/// {title, content} back to Rust by navigating to the sentinel URL.
+const BROWSER_EXTRACT_SCRIPT: &str = r##"
+(function () {
+  if (window.__owkExtract) return;
+  window.__owkExtract = true;
+  var SENTINEL = "https://openwiki-extract.local/done";
+  var MAX_MS = 12000;
+  var start = Date.now();
+  function pick() {
+    var sels = [".Post-RichText", ".RichContent-inner", "article",
+                "[class*=article-content]", ".RichText", "main",
+                "#content", ".content"];
+    var best = "";
+    for (var i = 0; i < sels.length; i++) {
+      try {
+        var ns = document.querySelectorAll(sels[i]);
+        var t = "";
+        for (var j = 0; j < ns.length; j++) t += "\n" + (ns[j].innerText || "");
+        if (t.length > best.length) best = t;
+      } catch (e) {}
+    }
+    if (best.trim().length < 200 && document.body) {
+      var bt = document.body.innerText || "";
+      if (bt.length > best.length) best = bt;
+    }
+    return best.trim();
+  }
+  function title() {
+    var h = document.querySelector(".Post-Title, .QuestionHeader-title, h1");
+    if (h && h.innerText && h.innerText.trim()) return h.innerText.trim();
+    return (document.title || "").trim();
+  }
+  function fire(c) {
+    try {
+      var p = JSON.stringify({ title: title(), content: c });
+      window.location.replace(SENTINEL + "#" + btoa(unescape(encodeURIComponent(p))));
+    } catch (e) {}
+  }
+  var timer = setInterval(function () {
+    var c = pick();
+    if (c.length >= 200) { clearInterval(timer); fire(c); }
+    else if (Date.now() - start > MAX_MS) { clearInterval(timer); fire(c); }
+  }, 300);
+})();
+"##;
+
+/// Render `url` in an off-screen WebView (a real browser engine), wait for the
+/// content to appear, and return it. Handles JS-rendered / anti-bot pages that
+/// plain HTTP and Jina cannot read (e.g. Zhihu's 403 challenge). Works on both
+/// macOS (WKWebView) and Windows (WebView2) — the engine ships with Tauri.
+async fn fetch_via_browser(app: &tauri::AppHandle, url: &str) -> Result<UrlReadResult, String> {
+    use base64::Engine;
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    let target = tauri::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    let label = format!("owk-fetch-{}", uuid::Uuid::new_v4());
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let app_build = app.clone();
+    let label_build = label.clone();
+    app.run_on_main_thread(move || {
+        let built =
+            WebviewWindowBuilder::new(&app_build, label_build, WebviewUrl::External(target))
+                .title("")
+                .inner_size(1200.0, 800.0)
+                // Off-screen but "visible" so the WebView keeps running JS
+                // timers — fully hidden windows get throttled by the engine.
+                .position(-32000.0, -32000.0)
+                .visible(true)
+                .focused(false)
+                .skip_taskbar(true)
+                .decorations(false)
+                .initialization_script(BROWSER_EXTRACT_SCRIPT)
+                .on_navigation(move |u| {
+                    if u.host_str() == Some(BROWSER_SENTINEL_HOST) {
+                        if let Some(frag) = u.fragment() {
+                            let _ = tx.send(frag.to_string());
+                        }
+                        return false; // cancel the sentinel navigation
+                    }
+                    true
+                })
+                .build();
+        if let Err(e) = built {
+            log::error!("[Browser] 创建无头窗口失败: {}", e);
+        }
+    })
+    .map_err(|e| format!("run_on_main_thread failed: {}", e))?;
+
+    let received =
+        tokio::time::timeout(Duration::from_secs(BROWSER_FETCH_TIMEOUT_SECS), rx.recv()).await;
+
+    // Always tear the window down, regardless of outcome.
+    let app_close = app.clone();
+    let label_close = label.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = app_close.get_webview_window(&label_close) {
+            let _ = w.destroy();
+        }
+    });
+
+    let frag = match received {
+        Ok(Some(f)) => f,
+        Ok(None) => return Err("browser channel closed (window build failed)".to_string()),
+        Err(_) => return Err("browser render timed out".to_string()),
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(frag.as_bytes())
+        .map_err(|e| format!("bad browser payload: {}", e))?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("bad browser JSON: {}", e))?;
+
+    let content = json
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let title = json
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if content.chars().count() < MIN_CONTENT_LENGTH {
+        return Err(format!(
+            "browser content too short ({} chars)",
+            content.chars().count()
+        ));
+    }
+
+    log::info!("[Browser] 成功: {} chars, title={:?}", content.len(), title);
+    Ok(UrlReadResult {
+        content: format_with_title(&title, &truncate_content(content)),
+        title,
+    })
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1468,6 +1683,24 @@ fn extract_twitter_article_content(article: &serde_json::Value) -> String {
 
 // ─── GitHub helpers ────────────────────────────────────────────────
 
+fn github_api_token_from_env() -> Option<String> {
+    clean_github_api_token(
+        std::env::var("GITHUB_TOKEN").ok(),
+        std::env::var("GH_TOKEN").ok(),
+    )
+}
+
+fn clean_github_api_token(
+    github_token: Option<String>,
+    gh_token: Option<String>,
+) -> Option<String> {
+    [github_token, gh_token]
+        .into_iter()
+        .flatten()
+        .map(|token| token.trim().to_string())
+        .find(|token| !token.is_empty())
+}
+
 /// Parse GitHub repo URL: https://github.com/owner/repo[/...]
 fn parse_github_repo_url(url: &str) -> Option<(String, String)> {
     let clean = url
@@ -1517,6 +1750,35 @@ fn base64_decode(input: &str) -> Option<String> {
     }
 
     String::from_utf8(bytes).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_github_api_token;
+
+    #[test]
+    fn github_token_prefers_github_token() {
+        let token = clean_github_api_token(
+            Some("  github-token  ".to_string()),
+            Some("gh-token".to_string()),
+        );
+
+        assert_eq!(token.as_deref(), Some("github-token"));
+    }
+
+    #[test]
+    fn github_token_falls_back_to_gh_token_when_primary_is_empty() {
+        let token = clean_github_api_token(Some("  ".to_string()), Some(" gh-token ".to_string()));
+
+        assert_eq!(token.as_deref(), Some("gh-token"));
+    }
+
+    #[test]
+    fn github_token_ignores_empty_values() {
+        let token = clean_github_api_token(Some("".to_string()), Some("  ".to_string()));
+
+        assert!(token.is_none());
+    }
 }
 
 // ─── Generic HTML helpers ──────────────────────────────────────────

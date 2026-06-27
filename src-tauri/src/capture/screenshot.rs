@@ -42,21 +42,21 @@ impl ScreenshotWatcher {
 
         #[cfg(target_os = "macos")]
         {
-        // Try to read macOS screenshot location preference
-        if let Ok(output) = std::process::Command::new("defaults")
-            .args(["read", "com.apple.screencapture", "location"])
-            .output()
-        {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let p = PathBuf::from(&path);
-                    if p.exists() {
-                        return p;
+            // Try to read macOS screenshot location preference
+            if let Ok(output) = std::process::Command::new("defaults")
+                .args(["read", "com.apple.screencapture", "location"])
+                .output()
+            {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        let p = PathBuf::from(&path);
+                        if p.exists() {
+                            return p;
+                        }
                     }
                 }
             }
-        }
         }
 
         // Fall back to Desktop

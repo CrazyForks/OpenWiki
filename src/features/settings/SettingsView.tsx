@@ -31,6 +31,10 @@ import {
   type AutomationSnapshot,
 } from "../../services/automationService";
 import {
+  isLaunchAtStartupEnabled,
+  setLaunchAtStartupEnabled,
+} from "../../services/autostartService";
+import {
   useSettingsStore,
   MODELS_BY_PROVIDER,
   PROVIDER_LABELS,
@@ -137,9 +141,9 @@ export function SettingsView() {
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [mcpGlobalError, setMcpGlobalError] = useState<string | null>(null);
 
-  const updateMcpTarget = (id: McpTargetId, update: Partial<McpTargetState>) => {
+  const updateMcpTarget = useCallback((id: McpTargetId, update: Partial<McpTargetState>) => {
     setMcpStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
-  };
+  }, []);
 
   const loadMcpStatus = useCallback(async () => {
     for (const target of ["claude", "openclaw"] as McpTargetId[]) {
@@ -150,7 +154,7 @@ export function SettingsView() {
         // silently fail — target may not be installed
       }
     }
-  }, []);
+  }, [updateMcpTarget]);
 
   useEffect(() => {
     loadMcpStatus();
@@ -244,6 +248,8 @@ export function SettingsView() {
 
   // ===== Update check state =====
   const [updateSettings, setUpdateSettingsState] = useState<UpdateSettings | null>(null);
+  const [launchAtStartup, setLaunchAtStartup] = useState(false);
+  const [launchAtStartupLoading, setLaunchAtStartupLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [latestInfo, setLatestInfo] = useState<UpdateInfo | null>(null);
   const [checkResult, setCheckResult] = useState<"up-to-date" | "error" | null>(null);
@@ -254,6 +260,13 @@ export function SettingsView() {
     getUpdateSettings()
       .then(setUpdateSettingsState)
       .catch((e) => console.error("[update] failed to load settings:", e));
+  }, []);
+
+  useEffect(() => {
+    isLaunchAtStartupEnabled()
+      .then(setLaunchAtStartup)
+      .catch((e) => console.error("[autostart] failed to load status:", e))
+      .finally(() => setLaunchAtStartupLoading(false));
   }, []);
 
   const handleCheckNow = async () => {
@@ -289,6 +302,18 @@ export function SettingsView() {
       );
     } catch (e) {
       console.error("[update] failed to toggle auto-check:", e);
+    }
+  };
+
+  const handleToggleLaunchAtStartup = async (enabled: boolean) => {
+    setLaunchAtStartupLoading(true);
+    try {
+      await setLaunchAtStartupEnabled(enabled);
+      setLaunchAtStartup(enabled);
+    } catch (e) {
+      console.error("[autostart] failed to toggle launch at startup:", e);
+    } finally {
+      setLaunchAtStartupLoading(false);
     }
   };
 
@@ -969,6 +994,17 @@ export function SettingsView() {
               />
             </SettingRow>
 
+            <SettingRow
+              label={t("system.launchAtStartup")}
+              desc={t("system.launchAtStartupDesc")}
+            >
+              <ToggleSwitch
+                checked={launchAtStartup}
+                onChange={handleToggleLaunchAtStartup}
+                disabled={launchAtStartupLoading}
+              />
+            </SettingRow>
+
             <div className="p-4 flex flex-col gap-2">
               <button
                 onClick={handleCheckNow}
@@ -1148,7 +1184,17 @@ function SettingRow({ label, desc, children }: { label: string; desc?: string; c
   );
 }
 
-function ToggleSwitch({ checked, onChange, color = "orange" }: { checked: boolean; onChange: (v: boolean) => void; color?: string }) {
+function ToggleSwitch({
+  checked,
+  onChange,
+  color = "orange",
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  color?: string;
+  disabled?: boolean;
+}) {
   const bgColor = checked
     ? color === "amber" ? "bg-amber-500"
     : color === "green" ? "bg-green-500"
@@ -1157,8 +1203,9 @@ function ToggleSwitch({ checked, onChange, color = "orange" }: { checked: boolea
 
   return (
     <button
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${bgColor}`}
+      className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${bgColor} ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
     >
       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${checked ? "translate-x-5" : "translate-x-0"}`} />
     </button>
@@ -1374,13 +1421,17 @@ function WikiSettingsSection() {
       try {
         const s = await ws.getWikiStats();
         setStats(s);
-      } catch {}
+      } catch {
+        // Wiki stats are optional in this settings section.
+      }
     });
     import("../../services/settingsService").then(async (ss) => {
       try {
         const settings = await ss.getSettings();
         setAutoCompile(settings.wiki_auto_compile !== "false");
-      } catch {}
+      } catch {
+        // Keep the default auto-compile state if settings fail to load.
+      }
     });
   }, []);
 

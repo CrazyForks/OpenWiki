@@ -12,7 +12,7 @@ import {
 } from "../../services/reportService";
 import { getAllContent } from "../../services/storageService";
 import { ReportSummaryCard } from "./ReportSummary";
-import { SECTION_THEME } from "./ReportCard";
+import { SECTION_THEME } from "./reportTheme";
 import { ImageFilmstrip } from "./ImageFilmstrip";
 import { CompactLinkList } from "./CompactLinkList";
 import { TextContentList } from "./TextContentList";
@@ -37,21 +37,7 @@ export function ReportView() {
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [weekContents, setWeekContents] = useState<CapturedContent[]>([]);
 
-  useEffect(() => {
-    loadReportList();
-  }, []);
-
-  useEffect(() => {
-    if (currentReport) {
-      loadWeekContent(currentReport.week_start, currentReport.week_end);
-    }
-  }, [currentReport?.id]);
-
-  useEffect(() => {
-    setFilterMode("all");
-  }, [currentReport?.id]);
-
-  const loadWeekContent = async (weekStart: string, weekEnd: string) => {
+  const loadWeekContent = useCallback(async (weekStart: string, weekEnd: string) => {
     try {
       const allContent = await getAllContent(500, 0);
       const filtered = allContent.filter((c) => {
@@ -61,21 +47,9 @@ export function ReportView() {
     } catch (e) {
       console.error("Failed to load week content:", e);
     }
-  };
+  }, []);
 
-  const loadReportList = async () => {
-    try {
-      const reports = await getAllReports();
-      setReportList(reports);
-      if (reports.length > 0 && !currentReport) {
-        await loadReport(reports[0].week_start);
-      }
-    } catch (e) {
-      console.error("Failed to load report list:", e);
-    }
-  };
-
-  const loadReport = async (weekStart: string) => {
+  const loadReport = useCallback(async (weekStart: string) => {
     try {
       setError(null);
       const report = await getReport(weekStart);
@@ -85,7 +59,33 @@ export function ReportView() {
       console.error("Failed to load report:", e);
       setError(t("error.loadFailed"));
     }
-  };
+  }, [setCurrentReport, setError, t]);
+
+  const loadReportList = useCallback(async () => {
+    try {
+      const reports = await getAllReports();
+      setReportList(reports);
+      if (reports.length > 0 && !currentReport) {
+        await loadReport(reports[0].week_start);
+      }
+    } catch (e) {
+      console.error("Failed to load report list:", e);
+    }
+  }, [currentReport, loadReport, setReportList]);
+
+  useEffect(() => {
+    void loadReportList();
+  }, [loadReportList]);
+
+  useEffect(() => {
+    if (currentReport) {
+      void loadWeekContent(currentReport.week_start, currentReport.week_end);
+    }
+  }, [currentReport, loadWeekContent]);
+
+  useEffect(() => {
+    setFilterMode("all");
+  }, [currentReport?.id]);
 
   const handleGenerate = useCallback(async () => {
     if (isGenerating) return;

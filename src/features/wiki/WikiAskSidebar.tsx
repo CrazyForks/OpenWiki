@@ -25,22 +25,23 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
   const [view, setView] = useState<"list" | "chat">("list");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     try {
       const s = await getChatSessions(30);
       setSessions(s);
     } catch (e) {
       console.error("Failed to load sessions:", e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => void loadSessions(), 0);
+    return () => window.clearTimeout(id);
+  }, [loadSessions]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const openSession = async (sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -114,7 +115,7 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
       setMessages((prev) => [...prev, errorMsg]);
     }
     setIsAsking(false);
-  }, [input, isAsking, activeSessionId, messages, t]);
+  }, [input, isAsking, activeSessionId, messages, t, loadSessions]);
 
   const handleSaveAsPage = async (msgId: string) => {
     // Synchronous ref check prevents double-click race
@@ -174,7 +175,9 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
         }
       }
       return refs;
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }, [pageTitleCache]);
 
   // Resolved refs per message
@@ -194,8 +197,8 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
         setResolvedRefs(prev => ({ ...prev, ...newRefs }));
       }
     };
-    resolve();
-  }, [messages]);
+    void resolve();
+  }, [messages, resolvePageRefs, resolvedRefs]);
 
   return (
     <div className="flex flex-col h-full" style={{

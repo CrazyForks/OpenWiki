@@ -211,12 +211,12 @@ pub fn open_automation_settings() -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-    let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to open Automation settings: {}", e))
+        let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to open Automation settings: {}", e))
     }
 }
 
@@ -270,32 +270,32 @@ fn probe_status() -> AutomationStatus {
 
     #[cfg(target_os = "macos")]
     {
-    let result = std::process::Command::new("osascript")
-        .args(["-e", PROBE_SCRIPT])
-        .output();
+        let result = std::process::Command::new("osascript")
+            .args(["-e", PROBE_SCRIPT])
+            .output();
 
-    match result {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if stdout.trim() == "1" {
-                AutomationStatus::Granted
-            } else {
-                log::warn!(
-                    "[automation] osascript returned unexpected stdout: {:?}",
-                    stdout
-                );
+        match result {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.trim() == "1" {
+                    AutomationStatus::Granted
+                } else {
+                    log::warn!(
+                        "[automation] osascript returned unexpected stdout: {:?}",
+                        stdout
+                    );
+                    AutomationStatus::Denied
+                }
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                log::warn!("[automation] osascript failed: {}", stderr.trim());
+                AutomationStatus::Denied
+            }
+            Err(e) => {
+                log::warn!("[automation] osascript invocation failed: {}", e);
                 AutomationStatus::Denied
             }
         }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("[automation] osascript failed: {}", stderr.trim());
-            AutomationStatus::Denied
-        }
-        Err(e) => {
-            log::warn!("[automation] osascript invocation failed: {}", e);
-            AutomationStatus::Denied
-        }
-    }
     }
 }

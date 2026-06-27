@@ -115,6 +115,10 @@
     "summaryCopied": "✓ Copied to clipboard",
     "summaryCopyBtn": "Copy Recent Summary"
   },
+  "system": {
+    "launchAtStartup": "Launch at startup",
+    "launchAtStartupDesc": "Start OpenWiki automatically after login. On by default, and you can turn it off anytime."
+  },
   "storage": {
     "title": "Storage",
     "totalItems": "Saved Items",

@@ -50,6 +50,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const [ocrText] = useState<string | null>(null);
   const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done">("idle");
   const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
+  const [renderedAt] = useState(() => Date.now());
 
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,7 +152,9 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const isLoadingUrl = hasSourceUrl && !isFetchedUrl && !isFailedUrl;
 
   // Only show "AI 分析中" for content captured in the last 2 minutes
-  const isRecent = Date.now() - new Date(content.captured_at).getTime() < 2 * 60 * 1000;
+  const capturedAtMs = new Date(content.captured_at).getTime();
+  const contentAgeMs = renderedAt - capturedAtMs;
+  const isRecent = contentAgeMs < 2 * 60 * 1000;
 
   const imageSrc =
     content.content_type === "image"
@@ -356,8 +359,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
             <div className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-slate-500">
               <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${
                 (() => {
-                  const ageMs = Date.now() - new Date(content.captured_at).getTime();
-                  const hours = ageMs / (1000 * 60 * 60);
+                  const hours = contentAgeMs / (1000 * 60 * 60);
                   if (hours < 1) return "bg-green-500";       // < 1小时：鲜绿
                   if (hours < 6) return "bg-green-400";       // < 6小时：浅绿
                   if (hours < 24) return "bg-yellow-400";     // < 1天：黄色
