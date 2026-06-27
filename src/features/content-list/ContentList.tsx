@@ -8,7 +8,7 @@ import {
 } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, FileText, Image as ImageIcon, Import, LoaderCircle, XCircle } from "lucide-react";
+import { CheckCircle2, FileText, FolderOpen, Image as ImageIcon, Import, LoaderCircle, XCircle } from "lucide-react";
 import { useContentStore } from "../../stores/contentStore";
 import {
   getAllContent,
@@ -64,6 +64,9 @@ const IMPORT_SOURCE_APPS = new Set(["Markdown 导入", "导入内容"]);
 const SUPPORTED_IMPORT_FORMATS = ["Markdown", "TXT", "PNG", "JPG", "WebP", "GIF", "PDF", "DOCX", "PPTX"];
 const FUTURE_IMPORT_FORMATS = ["DOC", "PPT"];
 const LONG_IMPORT_NOTICE_MS = 8000;
+// Import folders in chunks so a large library doesn't read every file into
+// memory at once (or ship one huge IPC payload), and so we can show progress.
+const IMPORT_BATCH_SIZE = 20;
 
 const isImportedDocument = (content: { source_app: string }) =>
   IMPORT_SOURCE_APPS.has(content.source_app);
@@ -131,6 +134,7 @@ export function ContentList() {
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const importPickerOpenRef = useRef(false);
   const importPanelRef = useRef<HTMLDivElement>(null);
 
@@ -193,6 +197,30 @@ export function ContentList() {
     importInputRef.current.click();
   }, [t]);
 
+  // webkitdirectory isn't in React's input typings; set it on the node so the
+  // native picker selects a whole folder (recursively) instead of a single file.
+  const setFolderInputEl = useCallback((el: HTMLInputElement | null) => {
+    folderInputRef.current = el;
+    if (el) {
+      el.setAttribute("webkitdirectory", "");
+      el.setAttribute("directory", "");
+    }
+  }, []);
+
+  const handleChooseFolder = useCallback(() => {
+    if (!folderInputRef.current) {
+      setImportStatus("error");
+      setImportMessage(t("import.failed"));
+      setTimeout(() => setImportStatus("idle"), 3000);
+      return;
+    }
+    importPickerOpenRef.current = true;
+    setImportStatus("picking");
+    setImportMessage(t("import.choosing"));
+    setIsImportPanelOpen(false);
+    folderInputRef.current.click();
+  }, [t]);
+
   const importFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {
       setImportStatus("idle");
@@ -211,50 +239,78 @@ export function ContentList() {
       return;
     }
 
-    setImportStatus("reading");
-    setImportMessage(t("import.reading", { count: supportedFiles.length }));
+    const total = supportedFiles.length;
+    const isBatched = total > IMPORT_BATCH_SIZE;
     setIsImportTakingLong(false);
     setIsImportPanelOpen(false);
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    let firstFailure: string | null = null;
+    const allImportedIds: string[] = [];
+
     try {
-      const hasDocument = supportedFiles.some(({ kind }) => kind === "document");
-      const entries = await Promise.all(
-        supportedFiles.map(async ({ file, kind }): Promise<ContentImportEntry> => {
-          if (kind === "image" || kind === "document") {
+      for (let start = 0; start < supportedFiles.length; start += IMPORT_BATCH_SIZE) {
+        const batch = supportedFiles.slice(start, start + IMPORT_BATCH_SIZE);
+        const hasDocument = batch.some(({ kind }) => kind === "document");
+
+        if (isBatched) {
+          // Folder / large import: show running progress (done / total).
+          setImportStatus("saving");
+          setImportMessage(t("import.importingProgress", { done: start, total }));
+        } else {
+          // Small selection: keep the original single-shot messages.
+          setImportStatus(hasDocument ? "converting" : "reading");
+          setImportMessage(hasDocument ? t("import.converting") : t("import.reading", { count: total }));
+        }
+
+        const entries = await Promise.all(
+          batch.map(async ({ file, kind }): Promise<ContentImportEntry> => {
+            if (kind === "image" || kind === "document") {
+              return {
+                file_name: file.name,
+                kind,
+                data_base64: await readFileAsBase64(file),
+              };
+            }
             return {
               file_name: file.name,
               kind,
-              data_base64: await readFileAsBase64(file),
+              text: await file.text(),
             };
-          }
-          return {
-            file_name: file.name,
-            kind,
-            text: await file.text(),
-          };
-        })
-      );
-      setImportStatus(hasDocument ? "converting" : "saving");
-      setImportMessage(hasDocument ? t("import.converting") : t("import.saving"));
-      const result = await importContentFiles(entries);
-      setImportStatus("saving");
-      setImportMessage(t("import.saving"));
-      await loadInitial();
+          })
+        );
 
-      const importedIds = result.imported.map((item) => item.id);
-      if (importedIds.length > 0) {
-        setHighlightedIds(importedIds);
+        if (!isBatched) {
+          setImportStatus("saving");
+          setImportMessage(t("import.saving"));
+        }
+
+        const result = await importContentFiles(entries);
+        importedCount += result.imported.length;
+        skippedCount += result.skipped_duplicates + result.skipped_invalid;
+        failedCount += result.failed.length;
+        if (!firstFailure && result.failed.length > 0) {
+          firstFailure = result.failed[0];
+        }
+        allImportedIds.push(...result.imported.map((item) => item.id));
       }
 
-      const skipped = result.skipped_duplicates + result.skipped_invalid;
-      if (result.imported.length === 0 && result.failed.length > 0) {
+      await loadInitial();
+      if (allImportedIds.length > 0) {
+        setHighlightedIds(allImportedIds);
+      }
+
+      if (importedCount === 0 && failedCount > 0) {
         setImportStatus("error");
-        setImportMessage(t("import.failedWithReason", { reason: result.failed[0] }));
+        setImportMessage(t("import.failedWithReason", { reason: firstFailure ?? "" }));
       } else {
         setImportStatus("done");
         setImportMessage(t("import.done", {
-          imported: result.imported.length,
-          skipped,
-          failed: result.failed.length,
+          imported: importedCount,
+          skipped: skippedCount,
+          failed: failedCount,
         }));
       }
       setTimeout(() => setImportStatus("idle"), 4000);
@@ -530,6 +586,15 @@ export function ContentList() {
           <Import size={16} />
           {importStatus === "picking" ? t("import.choosing") : isImportBusy ? t("import.importing") : t("import.chooseButton")}
         </button>
+        <button
+          type="button"
+          onClick={handleChooseFolder}
+          disabled={isImportBusy}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-orange-500/60 bg-transparent px-3 py-2 text-sm font-medium text-orange-600 transition-all hover:bg-orange-50 disabled:opacity-60 dark:text-orange-300 dark:hover:bg-orange-500/10"
+        >
+          <FolderOpen size={16} />
+          {t("import.chooseFolderButton")}
+        </button>
       </div>
     );
   };
@@ -623,6 +688,13 @@ export function ContentList() {
           className="hidden"
           onChange={handleContentImport}
         />
+        <input
+          ref={setFolderInputEl}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleContentImport}
+        />
         <div className="w-20 h-20 rounded-2xl glass flex items-center justify-center mb-5">
           <span className="text-4xl">📭</span>
         </div>
@@ -670,6 +742,13 @@ export function ContentList() {
         ref={importInputRef}
         type="file"
         accept={IMPORT_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={handleContentImport}
+      />
+      <input
+        ref={setFolderInputEl}
+        type="file"
         multiple
         className="hidden"
         onChange={handleContentImport}

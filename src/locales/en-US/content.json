@@ -80,6 +80,8 @@
     "supportedLabel": "Supported",
     "futureLabel": "Later",
     "chooseButton": "Choose Files",
+    "chooseFolderButton": "Choose Folder",
+    "importingProgress": "Importing {{done}} / {{total}}...",
     "noticeWorking": "Importing",
     "noticeDone": "Import complete",
     "noticeError": "Import failed"
