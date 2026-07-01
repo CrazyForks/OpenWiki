@@ -207,10 +207,10 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
               }
             }}
           >
-            {/* Category — the only AI chip on the card; tags moved into the expanded view */}
-            <CategoryChip
-              category={content.category}
-              analyzing={!content.category && !content.tags && !!(content.raw_text || ocrText) && (content.raw_text?.length ?? 0) >= 6 && isRecent}
+            {/* Tags — the card's primary AI chip (tags are the main organizing signal) */}
+            <TagChips
+              tags={content.tags}
+              analyzing={!content.tags && !!(content.raw_text || ocrText) && (content.raw_text?.length ?? 0) >= 6 && isRecent}
             />
 
             {/* Image content: thumbnail + summary side by side */}
@@ -576,27 +576,6 @@ function AnalyzingChip() {
       <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full animate-pulse
                         bg-orange-50 dark:bg-orange-500/10 text-orange-400 dark:text-orange-500">
         {t("card.aiAnalyzing")}
-      </span>
-    </div>
-  );
-}
-
-function CategoryChip({ category, analyzing }: { category?: string; analyzing?: boolean }) {
-  if (!category && analyzing) return <AnalyzingChip />;
-  if (!category) return null;
-  return (
-    <div className="mb-2">
-      <span
-        className="rounded-full px-2.5 py-0.5"
-        style={{
-          fontSize: 12,
-          fontWeight: 500,
-          color: "#F97316",
-          backgroundColor: "#F9731610",
-          border: "1px solid #F9731625",
-        }}
-      >
-        {category}
       </span>
     </div>
   );

@@ -125,7 +125,6 @@ export function ContentList() {
   const sensitiveFilterEnabled = useSettingsStore((s) => s.sensitiveFilterEnabled);
   const setStorageInfo = useSettingsStore((s) => s.setStorageInfo);
   const [filter, setFilter] = useState<ContentFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
@@ -440,7 +439,6 @@ export function ContentList() {
 
     // Reset filters to "all" so the target item is visible
     setFilter("all");
-    setCategoryFilter("all");
 
     // Wait for render, then scroll to the item
     const timer = setTimeout(() => {
@@ -473,11 +471,6 @@ export function ContentList() {
     } else if (filter !== "all") {
       result = result.filter((c) => c.content_type === filter && !isImportedDocument(c));
     }
-    if (categoryFilter !== "all") {
-      result = result.filter((c) =>
-        categoryFilter === "__uncategorized__" ? !c.category : c.category === categoryFilter
-      );
-    }
     if (dateRange !== "all") {
       const now = new Date();
       const cutoff = new Date();
@@ -491,7 +484,7 @@ export function ContentList() {
       result = result.filter((c) => new Date(c.captured_at) >= cutoff);
     }
     return result;
-  }, [contents, filter, categoryFilter, sensitiveFilterEnabled, dateRange]);
+  }, [contents, filter, sensitiveFilterEnabled, dateRange]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = { all: totalCount };
@@ -504,25 +497,6 @@ export function ContentList() {
     }
     return counts;
   }, [contents, totalCount]);
-
-  // Categories derived from loaded items, most frequent first — same
-  // client-side filtering pattern as the type/date filters above.
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const c of contents) {
-      const key = c.category || "__uncategorized__";
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return counts;
-  }, [contents]);
-
-  const categoryList = useMemo(
-    () =>
-      Object.keys(categoryCounts)
-        .filter((k) => k !== "__uncategorized__")
-        .sort((a, b) => categoryCounts[b] - categoryCounts[a]),
-    [categoryCounts]
-  );
 
   const isImportBusy = importStatus === "picking" || importStatus === "reading" || importStatus === "converting" || importStatus === "saving";
 
@@ -882,38 +856,6 @@ export function ContentList() {
           </div>
         </div>
       </div>
-
-      {/* Category filter row — appears once at least one item is categorized */}
-      {categoryList.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-1">
-          {["all", ...categoryList, ...(categoryCounts["__uncategorized__"] ? ["__uncategorized__"] : [])].map((cat) => {
-            const isActive = categoryFilter === cat;
-            const label =
-              cat === "all"
-                ? t("filter.all")
-                : cat === "__uncategorized__"
-                ? t("filter.uncategorized")
-                : cat;
-            const count = cat === "all" ? totalCount : categoryCounts[cat] || 0;
-            return (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(isActive && cat !== "all" ? "all" : cat)}
-                className={`text-[11px] px-2.5 py-1 rounded-full border transition-all
-                  ${isActive
-                    ? "text-white bg-orange-500 border-orange-500"
-                    : "text-gray-500 dark:text-slate-400 border-gray-200/60 dark:border-white/[0.08] bg-white/60 dark:bg-white/[0.04] hover:border-orange-300 hover:text-orange-500"
-                  }`}
-              >
-                {label}
-                <span className={`ml-1 ${isActive ? "text-white/80" : "text-gray-400 dark:text-slate-500"}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {importStatus !== "idle" && importMessage && (
         <div className={`px-1 text-xs ${importStatus === "error" ? "text-red-500" : "text-stone-400 dark:text-stone-500"}`}>

@@ -187,6 +187,30 @@ impl UrlReader {
 
     async fn fetch_wechat(&self, url: &str) -> Result<UrlReadResult, String> {
         let html = self.get_html(url).await?;
+
+        // WeChat sometimes serves an anti-bot challenge ("环境异常，完成验证后
+        // 即可继续访问") instead of the article. Plain HTTP and Jina both get
+        // the same block page, so the only way through is a real browser render.
+        if is_wechat_antibot(&html) {
+            log::warn!("[WeChat] 命中反爬验证页, 尝试无头 WebView 兜底: {}", url);
+            if let Some(app) = self.app.as_ref() {
+                match fetch_via_browser(app, url).await {
+                    Ok(r) if !is_wechat_antibot(&r.content) => {
+                        log::info!(
+                            "[WeChat] 成功 (browser fallback): {} chars",
+                            r.content.len()
+                        );
+                        return Ok(r);
+                    }
+                    Ok(_) => log::warn!("[WeChat] 无头 WebView 仍被反爬拦截"),
+                    Err(e) => log::warn!("[WeChat] 无头 WebView 失败: {}", e),
+                }
+            }
+            // Don't fall through: the remaining extractors would just pull the
+            // block-page text and save it as if it were the article.
+            return Err("微信反爬验证页拦截，请稍后重试或手动打开原文".to_string());
+        }
+
         let title = extract_wechat_title(&html);
 
         // Try js_content div first (traditional articles)
@@ -241,12 +265,29 @@ impl UrlReader {
         // Fallback: try Jina Reader (some JS-rendered articles need headless browser)
         log::info!("[WeChat] HTML 抓取失败, 尝试 Jina Reader");
         if let Ok(jina_result) = self.fetch_via_jina(url).await {
-            if jina_result.content.len() >= MIN_CONTENT_LENGTH {
+            if jina_result.content.len() >= MIN_CONTENT_LENGTH
+                && !is_wechat_antibot(&jina_result.content)
+            {
                 log::info!(
                     "[WeChat] 成功 (Jina fallback): {} chars",
                     jina_result.content.len()
                 );
                 return Ok(jina_result);
+            }
+        }
+
+        // Fallback: real browser render (handles JS-only articles the HTML
+        // extractors miss). Only available when a GUI app handle exists.
+        if let Some(app) = self.app.as_ref() {
+            log::info!("[WeChat] 尝试无头 WebView 兜底");
+            if let Ok(r) = fetch_via_browser(app, url).await {
+                if !is_wechat_antibot(&r.content) {
+                    log::info!(
+                        "[WeChat] 成功 (browser fallback): {} chars",
+                        r.content.len()
+                    );
+                    return Ok(r);
+                }
             }
         }
 
@@ -1052,6 +1093,13 @@ fn prefers_browser(url: &str) -> bool {
     url.contains("zhihu.com/")
 }
 
+/// True when the fetched WeChat page is the anti-bot interstitial
+/// ("环境异常 / 完成验证后即可继续访问 / 去验证") rather than the real article.
+/// Matches both the raw HTML and Jina's translated Markdown of that page.
+fn is_wechat_antibot(text: &str) -> bool {
+    text.contains("环境异常") || text.contains("完成验证后即可继续访问")
+}
+
 /// Injected into every page load. Polls for the article body (anti-bot
 /// challenges resolve on their own inside a real browser), then ships
 /// {title, content} back to Rust by navigating to the sentinel URL.
@@ -1063,7 +1111,8 @@ const BROWSER_EXTRACT_SCRIPT: &str = r##"
   var MAX_MS = 12000;
   var start = Date.now();
   function pick() {
-    var sels = [".Post-RichText", ".RichContent-inner", "article",
+    var sels = [".Post-RichText", ".RichContent-inner",
+                "#js_content", ".rich_media_content", "article",
                 "[class*=article-content]", ".RichText", "main",
                 "#content", ".content"];
     var best = "";
@@ -1082,7 +1131,7 @@ const BROWSER_EXTRACT_SCRIPT: &str = r##"
     return best.trim();
   }
   function title() {
-    var h = document.querySelector(".Post-Title, .QuestionHeader-title, h1");
+    var h = document.querySelector(".Post-Title, .QuestionHeader-title, #activity-name, .rich_media_title, h1");
     if (h && h.innerText && h.innerText.trim()) return h.innerText.trim();
     return (document.title || "").trim();
   }
@@ -1755,6 +1804,20 @@ fn base64_decode(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::clean_github_api_token;
+    use super::is_wechat_antibot;
+
+    #[test]
+    fn detects_wechat_antibot_block_page() {
+        // The real block-page text WeChat serves (also how Jina renders it).
+        let block = "## 环境异常\n\n当前环境异常，完成验证后即可继续访问。\n\n去验证";
+        assert!(is_wechat_antibot(block));
+    }
+
+    #[test]
+    fn real_wechat_article_is_not_flagged_as_antibot() {
+        let article = "# 沉浸翻译的开源平替，来了！\n\n作为一名重度网页翻译用户...";
+        assert!(!is_wechat_antibot(article));
+    }
 
     #[test]
     fn github_token_prefers_github_token() {
