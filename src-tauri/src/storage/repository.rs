@@ -1087,7 +1087,11 @@ impl Repository {
     /// writing to SQLite, so loading settings never triggers an OS prompt.
     pub fn update_setting(&self, key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
         if secure_store::is_secret_setting(key) {
-            if value.is_empty() || secure_store::is_secret_placeholder(value) {
+            if secure_store::is_secret_placeholder(value) {
+                return Ok(());
+            }
+
+            if value.is_empty() {
                 return self.update_setting_db(key, "");
             }
 
@@ -3284,6 +3288,28 @@ mod tests {
         let stored = repo.get_setting_from_db(key).unwrap().unwrap();
         assert!(crate::secure_store::is_encrypted_value(&stored));
         assert_ne!(stored, "sk-legacy-secret");
+    }
+
+    #[test]
+    fn secret_setting_placeholder_update_preserves_existing_secret() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        let key = "ai_api_key_test_placeholder";
+
+        repo.update_setting(key, "sk-test-secret").unwrap();
+        let stored_before = repo.get_setting_from_db(key).unwrap().unwrap();
+
+        repo.update_setting(key, crate::secure_store::SECRET_SETTING_PRESENT)
+            .unwrap();
+
+        assert_eq!(
+            repo.get_setting(key).unwrap(),
+            Some("sk-test-secret".to_string())
+        );
+        assert_eq!(
+            repo.get_setting_from_db(key).unwrap(),
+            Some(stored_before)
+        );
     }
 
     #[test]

@@ -3284,7 +3284,7 @@ dependencies = [
 
 [[package]]
 name = "openwiki"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "aes-gcm",
  "arboard",
