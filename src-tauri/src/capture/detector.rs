@@ -477,6 +477,14 @@ fn make_window_transparent(win: &tauri::WebviewWindow) {
     log::info!("Window transparency applied synchronously");
 }
 
+#[cfg(target_os = "macos")]
+fn suppress_reopen_temporarily(app: &AppHandle, duration: Duration) {
+    let suppress_arc = app.state::<AppState>().suppress_reopen_until.clone();
+    if let Ok(mut guard) = suppress_arc.lock() {
+        *guard = Some(Instant::now() + duration);
+    };
+}
+
 /// Show the bubble window without stealing focus from the current app.
 /// Strategy: record frontmost app before showing, then reactivate it after.
 #[cfg(target_os = "macos")]
@@ -676,6 +684,8 @@ fn show_bubble_window(app: &AppHandle) {
 
             #[cfg(target_os = "macos")]
             {
+                suppress_reopen_temporarily(app, Duration::from_secs(5));
+
                 if is_circle {
                     // Circle mode: apply transparency BEFORE showing window
                     make_window_transparent(&win);
