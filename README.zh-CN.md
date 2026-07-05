@@ -18,6 +18,10 @@
   隐私优先 — 所有数据存储在本地 SQLite 数据库。
 </p>
 
+<p align="center">
+  <a href="https://openwiki.pages.dev">🌐 官网</a>
+</p>
+
 ## 📸 截图
 
 | 内容捕获 | 知识库 |

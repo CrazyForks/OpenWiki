@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">中文文档</a>
+  <a href="https://openwiki.pages.dev">🌐 Website</a> · <a href="README.zh-CN.md">中文文档</a>
 </p>
 
 ## Screenshots
