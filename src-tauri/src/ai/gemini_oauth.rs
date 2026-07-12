@@ -11,6 +11,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use once_cell::sync::Lazy;
+use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
@@ -75,22 +76,9 @@ pub static GEMINI_OAUTH_STATE: Lazy<Arc<Mutex<Option<GeminiOAuthToken>>>> =
 
 /// Generate a random PKCE code verifier (32 random bytes → base64url, no padding).
 fn generate_code_verifier() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    let pid = std::process::id() as u64;
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let cnt = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut state = seed ^ (pid.wrapping_shl(32) | pid.wrapping_shr(32)) ^ cnt;
     let mut bytes = [0u8; 32];
-    for b in bytes.iter_mut() {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        *b = (state & 0xff) as u8;
-    }
+    let mut rng = OsRng;
+    rng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
@@ -599,5 +587,22 @@ pub fn get_gemini_oauth_status() -> GeminiOAuthStatus {
             email: None,
             expires_at: None,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn code_verifier_uses_pkce_safe_random_output() {
+        let first = generate_code_verifier();
+        let second = generate_code_verifier();
+
+        assert_eq!(first.len(), 43);
+        assert!(first
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+        assert_ne!(first, second);
     }
 }
