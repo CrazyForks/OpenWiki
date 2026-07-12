@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { Clipboard } from "lucide-react";
+import { motion } from "framer-motion";
 import {
   requestAutomationPermission,
   dismissAutomationPrompt,
@@ -77,18 +78,23 @@ export function PreAuthModal() {
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
       className="fixed inset-0 z-[100] flex items-center justify-center
-                 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+                 bg-black/50 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
     >
-      <div
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
         className="relative w-[460px] max-w-[90vw] rounded-2xl
                    bg-[#18181c] border border-white/10
                    shadow-[0_30px_80px_rgba(0,0,0,0.7)]
-                   p-9 text-gray-100
-                   animate-in slide-in-from-bottom-4 duration-300"
+                   p-9 text-gray-100"
       >
         {/* Icon */}
         <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl
@@ -149,7 +155,7 @@ export function PreAuthModal() {
             {t("modal.later")}
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

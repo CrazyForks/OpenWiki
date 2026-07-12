@@ -5,6 +5,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, Download, Loader2, X } from "lucide-react";
+import { motion } from "framer-motion";
 import { type UpdateInfo } from "../../services/updateService";
 
 type PrepareState = "idle" | "preparing" | "ready" | "installing" | "failed";
@@ -151,9 +152,12 @@ export function UpdateBanner() {
       : t("dialog.install");
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
       className="fixed bottom-4 left-4 right-4 z-[100] flex justify-center
-                 pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-200
+                 pointer-events-none
                  sm:bottom-5 sm:left-auto sm:right-5 sm:justify-end"
       role="dialog"
       aria-live="polite"
@@ -165,7 +169,7 @@ export function UpdateBanner() {
                    border border-stone-200/70 dark:border-white/[0.08]
                    bg-white text-stone-900 dark:bg-stone-900 dark:text-stone-50
                    shadow-[0_24px_70px_rgba(28,25,23,0.24)]
-                   p-7 animate-in slide-in-from-bottom-3 duration-300"
+                   p-7"
       >
         <button
           onClick={handleClose}
@@ -245,6 +249,6 @@ export function UpdateBanner() {
           </button>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
