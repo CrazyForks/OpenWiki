@@ -41,8 +41,9 @@ fn resolve_from_mode(mode: &str) -> String {
 /// Priority order:
 ///   1. macOS `AppleLocale`         (simplest, e.g. "zh_CN" / "en_US")
 ///   2. macOS `AppleLanguages`      (user's ordered language list)
-///   3. `LANG` env var              (only reliable on Linux)
-///   4. default → zh-CN
+///   3. Windows system locale
+///   4. `LANG` env var              (only reliable on Linux)
+///   5. default → zh-CN
 fn system_locale() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -52,13 +53,8 @@ fn system_locale() -> String {
             .output()
         {
             let locale = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !locale.is_empty() {
-                if locale.starts_with("en") {
-                    return LOCALE_EN_US.to_string();
-                }
-                if locale.starts_with("zh") {
-                    return LOCALE_ZH_CN.to_string();
-                }
+            if let Some(locale) = normalize_system_locale(&locale) {
+                return locale;
             }
         }
 
@@ -76,30 +72,65 @@ fn system_locale() -> String {
             if let Some(q1) = raw.find('"') {
                 if let Some(q2_rel) = raw[q1 + 1..].find('"') {
                     let first_lang = &raw[q1 + 1..q1 + 1 + q2_rel];
-                    if first_lang.starts_with("en") {
-                        return LOCALE_EN_US.to_string();
-                    }
-                    if first_lang.starts_with("zh") {
-                        return LOCALE_ZH_CN.to_string();
+                    if let Some(locale) = normalize_system_locale(first_lang) {
+                        return locale;
                     }
                 }
             }
         }
     }
 
-    // 3. LANG env var — last resort. Reliable on Linux, but on macOS it
+    #[cfg(target_os = "windows")]
+    if let Some(locale) =
+        sys_locale::get_locale().and_then(|locale| normalize_system_locale(&locale))
+    {
+        return locale;
+    }
+
+    // 4. LANG env var — last resort. Reliable on Linux, but on macOS it
     //    often lies (see doc comment above).
     if let Ok(lang) = std::env::var("LANG") {
-        if lang.starts_with("en") {
-            return LOCALE_EN_US.to_string();
+        if let Some(locale) = normalize_system_locale(&lang) {
+            return locale;
         }
     }
 
-    // 4. Default.
+    // 5. Default.
     LOCALE_ZH_CN.to_string()
+}
+
+fn normalize_system_locale(locale: &str) -> Option<String> {
+    let locale = locale.trim().to_ascii_lowercase();
+    if locale.starts_with("en") {
+        Some(LOCALE_EN_US.to_string())
+    } else if locale.starts_with("zh") {
+        Some(LOCALE_ZH_CN.to_string())
+    } else {
+        None
+    }
 }
 
 /// Check if the current locale is English.
 pub fn is_english(locale: &str) -> bool {
     locale.starts_with("en")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_supported_system_locales() {
+        assert_eq!(normalize_system_locale("en-US"), Some("en-US".to_string()));
+        assert_eq!(
+            normalize_system_locale("en_US.UTF-8"),
+            Some("en-US".to_string())
+        );
+        assert_eq!(normalize_system_locale("zh-CN"), Some("zh-CN".to_string()));
+        assert_eq!(
+            normalize_system_locale("zh-Hans"),
+            Some("zh-CN".to_string())
+        );
+        assert_eq!(normalize_system_locale("fr-FR"), None);
+    }
 }
