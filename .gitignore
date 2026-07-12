@@ -53,3 +53,8 @@ src-tauri/resources/markitdown/VERSION.txt
 
 # Internal planning docs (not for public repo)
 docs/superpowers/
+
+# Local working artifacts unrelated to the project
+outputs/
+_design/
+*-report-*.html
