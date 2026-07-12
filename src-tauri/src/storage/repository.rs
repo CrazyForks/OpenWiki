@@ -2812,6 +2812,21 @@ mod tests {
     }
 
     #[test]
+    fn get_content_by_id_finds_items_beyond_first_500() {
+        let db = test_db();
+        let repo = Repository::new(db);
+
+        for i in 0..=500 {
+            let id = format!("item_{i}");
+            let content = make_content(&id, &format!("2025-01-01T10:{:02}:00", i % 60));
+            repo.save_content(&content).unwrap();
+        }
+
+        let item = repo.get_content_by_id("item_500").unwrap().unwrap();
+        assert_eq!(item.id, "item_500");
+    }
+
+    #[test]
     fn test_get_content_stats_counts_total_days_inclusively() {
         let items = vec![
             ContentForAnalysis {

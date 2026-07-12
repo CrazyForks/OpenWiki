@@ -1455,10 +1455,8 @@ pub async fn retry_url_fetch(
 
     // Find the content record and get its source_url
     let content = repo
-        .get_all_content(500, 0)
+        .get_content_by_id(&content_id)
         .map_err(|e| format!("DB error: {}", e))?
-        .into_iter()
-        .find(|c| c.id == content_id)
         .ok_or_else(|| "Content not found".to_string())?;
 
     let url = content
@@ -1541,10 +1539,8 @@ pub async fn ocr_image(state: State<'_, AppState>, content_id: String) -> Result
 
     // Find the content record
     let content = repo
-        .get_all_content(500, 0)
+        .get_content_by_id(&content_id)
         .map_err(|e| format!("DB error: {}", e))?
-        .into_iter()
-        .find(|c| c.id == content_id)
         .ok_or_else(|| "Content not found".to_string())?;
 
     let image_path = content
