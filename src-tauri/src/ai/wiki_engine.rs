@@ -725,7 +725,7 @@ pub fn parse_ai_json_pub(raw: &str) -> Result<serde_json::Value, String> {
     parse_ai_json(raw)
 }
 
-/// Link pages into a "related" graph using TF-IDF weighted cosine
+/// Link pages into a "similar" graph using TF-IDF weighted cosine
 /// similarity over their tags.
 ///
 /// The old implementation connected any two pages that shared at least
@@ -766,6 +766,8 @@ pub fn link_pages_by_shared_tags(db: Arc<Database>) -> Result<usize, String> {
     const SIM_THRESHOLD: f64 = 0.3;
 
     let repo = Repository::new(db);
+    repo.delete_edges_by_relation("similar")
+        .map_err(|e| e.to_string())?;
     let pages = repo
         .get_all_wiki_pages(1000, 0)
         .map_err(|e| e.to_string())?;
@@ -889,7 +891,8 @@ pub fn link_pages_by_shared_tags(db: Arc<Database>) -> Result<usize, String> {
         let (id_a, _) = &page_tags[*i];
         let (id_b, _) = &page_tags[*j];
         let w = edge_weight.get(&(*i, *j)).copied().unwrap_or(0.0);
-        let _ = repo.save_wiki_edge(id_a, id_b, "related", w);
+        repo.save_wiki_edge(id_a, id_b, "similar", w)
+            .map_err(|e| e.to_string())?;
         count += 1;
     }
 

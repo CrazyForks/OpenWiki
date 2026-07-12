@@ -4,13 +4,31 @@ use super::models::{
     UserFeedback, UserPreference, WeeklyReport,
 };
 use crate::secure_store;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct Repository {
     db: Arc<Database>,
+}
+
+pub(crate) fn parse_page_reference_ids(raw: &str) -> Vec<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| match item {
+            serde_json::Value::String(id) => Some(id),
+            serde_json::Value::Object(object) => object
+                .get("id")
+                .and_then(|id| id.as_str())
+                .map(str::to_string),
+            _ => None,
+        })
+        .filter(|id| !id.is_empty())
+        .collect()
 }
 
 impl Repository {
@@ -1978,6 +1996,75 @@ impl Repository {
         Ok(n)
     }
 
+    pub fn migrate_wiki_edge_relations(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        const MIGRATION_KEY: &str = "wiki_edge_relations_v1";
+        let mut conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let tx = conn.transaction()?;
+        let completed: Option<String> = tx
+            .query_row(
+                "SELECT value FROM app_settings WHERE key=?1",
+                params![MIGRATION_KEY],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if completed.as_deref() == Some("done") {
+            tx.commit()?;
+            return Ok(0);
+        }
+
+        let mut migrated = tx.execute(
+            "INSERT OR IGNORE INTO wiki_edges (source_page_id, target_page_id, relation, weight, created_at)
+             SELECT e.source_page_id, e.target_page_id, 'qa_reference', e.weight, e.created_at
+             FROM wiki_edges e JOIN wiki_pages s ON s.id=e.source_page_id JOIN wiki_pages t ON t.id=e.target_page_id
+             WHERE e.relation='related' AND (s.page_type='qa' OR t.page_type='qa')",
+            [],
+        )?;
+        migrated += tx.execute(
+            "INSERT OR IGNORE INTO wiki_edges (source_page_id, target_page_id, relation, weight, created_at)
+             SELECT e.target_page_id, e.source_page_id, 'qa_reference', e.weight, e.created_at
+             FROM wiki_edges e JOIN wiki_pages s ON s.id=e.source_page_id JOIN wiki_pages t ON t.id=e.target_page_id
+             WHERE e.relation='related' AND (s.page_type='qa' OR t.page_type='qa')",
+            [],
+        )?;
+        let qa_references = {
+            let mut stmt = tx.prepare(
+                "SELECT p.id, m.pages_used FROM wiki_pages p
+                 JOIN wiki_chat_messages m ON m.id=p.source_message_id
+                 WHERE p.page_type='qa' AND m.pages_used IS NOT NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        for (qa_page_id, pages_used) in qa_references {
+            for reference_id in parse_page_reference_ids(&pages_used) {
+                for (source, target) in [(&qa_page_id, &reference_id), (&reference_id, &qa_page_id)]
+                {
+                    migrated += tx.execute(
+                        "INSERT OR IGNORE INTO wiki_edges (source_page_id, target_page_id, relation, weight, created_at)
+                         SELECT ?1, ?2, 'qa_reference', 1.0, datetime('now')
+                         WHERE EXISTS (SELECT 1 FROM wiki_pages WHERE id=?1)
+                           AND EXISTS (SELECT 1 FROM wiki_pages WHERE id=?2)",
+                        params![source, target],
+                    )?;
+                }
+            }
+        }
+        tx.execute("DELETE FROM wiki_edges WHERE relation='related'", [])?;
+        tx.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, 'done', datetime('now'))
+             ON CONFLICT(key) DO UPDATE SET value='done', updated_at=datetime('now')",
+            params![MIGRATION_KEY],
+        )?;
+        tx.commit()?;
+        Ok(migrated)
+    }
+
     // ========== Wiki Compile Log ==========
 
     pub fn acquire_compile_lock(
@@ -3057,6 +3144,105 @@ mod tests {
             last_compiled_at: None,
             source_message_id: None,
         }
+    }
+
+    #[test]
+    fn wiki_edge_migration_is_idempotent_and_restores_qa_references() {
+        use super::super::models::WikiChatMessage;
+
+        let db = test_db();
+        let repo = Repository::new(db.clone());
+        for id in ["source-1", "source-2", "ordinary"] {
+            repo.save_wiki_page(&make_wiki_page(
+                id,
+                id,
+                "summary",
+                "body",
+                "2026-07-12T10:00:00Z",
+                "concept",
+            ))
+            .unwrap();
+        }
+        let mut qa_page = make_wiki_page(
+            "qa-page",
+            "Question",
+            "summary",
+            "body",
+            "2026-07-12T10:00:00Z",
+            "qa",
+        );
+        qa_page.source_message_id = Some("answer-1".to_string());
+        repo.save_wiki_page(&qa_page).unwrap();
+        repo.create_chat_session("session-1", None).unwrap();
+        repo.add_chat_message(&WikiChatMessage {
+            id: "answer-1".to_string(),
+            session_id: "session-1".to_string(),
+            role: "assistant".to_string(),
+            content: "answer".to_string(),
+            pages_used: Some(
+                r#"["source-1",{"id":"source-2","title":"Source 2"},"missing"]"#.to_string(),
+            ),
+            source_mode: Some("knowledge_base".to_string()),
+            turn_index: 0,
+            created_at: "2026-07-12T10:00:00Z".to_string(),
+        })
+        .unwrap();
+        repo.save_wiki_edge("qa-page", "source-1", "related", 1.0)
+            .unwrap();
+        repo.save_wiki_edge("source-1", "ordinary", "related", 0.5)
+            .unwrap();
+
+        assert!(repo.migrate_wiki_edge_relations().unwrap() >= 3);
+        let first = repo.get_all_wiki_edges().unwrap();
+        assert!(first.iter().all(|edge| edge.relation != "related"));
+        for source in ["source-1", "source-2"] {
+            assert!(first.iter().any(|edge| {
+                edge.source_page_id == "qa-page"
+                    && edge.target_page_id == source
+                    && edge.relation == "qa_reference"
+            }));
+            assert!(first.iter().any(|edge| {
+                edge.source_page_id == source
+                    && edge.target_page_id == "qa-page"
+                    && edge.relation == "qa_reference"
+            }));
+        }
+        assert!(first.iter().all(|edge| edge.target_page_id != "missing"));
+
+        assert_eq!(repo.migrate_wiki_edge_relations().unwrap(), 0);
+        let second = repo.get_all_wiki_edges().unwrap();
+        assert_eq!(first.len(), second.len());
+
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE wiki_pages SET tags='[\"shared\"]' WHERE id IN ('source-1','source-2')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE wiki_pages SET tags='[\"other\"]' WHERE id='ordinary'",
+                [],
+            )
+            .unwrap();
+        }
+        repo.save_wiki_edge("ordinary", "source-1", "similar", 0.1)
+            .unwrap();
+        crate::ai::wiki_engine::link_pages_by_shared_tags(db).unwrap();
+        let rebuilt = repo.get_all_wiki_edges().unwrap();
+        assert!(rebuilt.iter().any(|edge| edge.relation == "similar"));
+        assert!(!rebuilt.iter().any(|edge| {
+            edge.source_page_id == "ordinary"
+                && edge.target_page_id == "source-1"
+                && edge.relation == "similar"
+        }));
+        assert_eq!(
+            rebuilt
+                .iter()
+                .filter(|edge| edge.relation == "qa_reference")
+                .count(),
+            4
+        );
     }
 
     #[test]
