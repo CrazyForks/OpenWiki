@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
+import { Camera, Clipboard as ClipboardIcon, Link2 } from "lucide-react";
 
 const DEFAULT_COUNTDOWN = 5;
 const CIRCLE_SIZE = 48;
@@ -666,9 +667,11 @@ export default function BubbleView() {
                 {saving ? "..." : t("action.save")}
               </button>
               <button
-                onClick={collapseCapsule}
+                onClick={dismiss}
+                aria-label={t("action.cancel")}
+                title={t("action.cancel")}
                 className="w-7 h-7 rounded-lg flex items-center justify-center
-                           text-white/20 hover:text-red-400 hover:bg-red-500/15
+                           text-white/25 hover:text-white/60 hover:bg-white/[0.06]
                            transition-all duration-150 cursor-pointer flex-shrink-0"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -732,7 +735,13 @@ export default function BubbleView() {
                 </defs>
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm leading-none">{isImage ? "📷" : isUrl ? "🔗" : "📋"}</span>
+                {isImage ? (
+                  <Camera size={16} className="text-orange-200" strokeWidth={2} />
+                ) : isUrl ? (
+                  <Link2 size={16} className="text-orange-200" strokeWidth={2} />
+                ) : (
+                  <ClipboardIcon size={16} className="text-orange-200" strokeWidth={2} />
+                )}
               </div>
             </div>
           </div>
@@ -755,24 +764,6 @@ export default function BubbleView() {
             </svg>
           </div>
 
-          {/* Dismiss X — always rendered, opacity controlled */}
-          <button
-            onClick={(e) => { e.stopPropagation(); dismiss(); }}
-            className={`absolute rounded-full bg-red-500/80 hover:bg-red-500
-                       flex items-center justify-center shadow-lg cursor-pointer
-                       ${confirmed ? "opacity-0 pointer-events-none" : "opacity-0 hover:opacity-100"}`}
-            style={{
-              width: 16, height: 16,
-              top: 0,
-              right: isRight ? 0 : undefined,
-              left: isLeft ? CIRCLE_SIZE - 16 : undefined,
-              transition: "opacity 0.2s ease",
-            }}
-          >
-            <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
       </div>
     );
