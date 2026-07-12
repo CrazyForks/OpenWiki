@@ -21,7 +21,9 @@
     "view": "Release notes",
     "close": "Close",
     "failedTitle": "Automatic update is unavailable",
-    "failedBody": "OpenWiki ran into a problem while installing the update: {{error}}. You can download it manually from the release page.",
+    "downloadFailedBody": "OpenWiki could not download the update: {{error}}. Retry after restoring your connection, or download it manually from the release page.",
+    "installFailedBody": "OpenWiki could not install the update: {{error}}. Download it again and retry.",
+    "retryDownload": "Download again",
     "downloadFallback": "Download update"
   },
   "settings": {
