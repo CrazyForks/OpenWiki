@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, forwardRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -20,6 +21,8 @@ interface ContentCardProps {
   content: CapturedContent;
   isHighlighted?: boolean;
 }
+
+const URL_RETRY_TIMEOUT_MS = 120_000;
 
 function formatRelativeTime(dateStr: string, t: TFunction): string {
   const date = new Date(dateStr);
@@ -119,15 +122,48 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const timeStr = formatRelativeTime(content.captured_at, t);
 
   const [retrying, setRetrying] = useState(false);
+  const retryCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => retryCleanupRef.current?.();
+  }, []);
 
   const handleRetry = async () => {
+    if (retrying) return;
+    retryCleanupRef.current?.();
     setRetrying(true);
+
+    let finished = false;
+    let timeoutId: number | null = null;
+    const unlistenPromise = listen<{ id: string; failed?: boolean; error?: string }>(
+      "content:url-fetched",
+      (event) => {
+        if (event.payload.id === content.id) finish();
+      },
+    );
+    const cleanup = () => {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      void unlistenPromise.then((unlisten) => unlisten());
+      retryCleanupRef.current = null;
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      setRetrying(false);
+    };
+    retryCleanupRef.current = () => {
+      finished = true;
+      cleanup();
+    };
+    timeoutId = window.setTimeout(finish, URL_RETRY_TIMEOUT_MS);
+
     try {
       await retryUrlFetch(content.id);
     } catch (e) {
       console.error("Retry failed:", e);
+      finish();
     }
-    // Don't reset retrying — the list will reload when content:url-fetched fires
   };
 
   // URL content states
