@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import { ClipboardList, Target, Settings, Search, BookOpen } from "lucide-react";
 import { ContentList } from "./features/content-list/ContentList";
 import { SettingsView } from "./features/settings/SettingsView";
-import { DataHubView } from "./features/data-hub/DataHubView";
 import { RadarView } from "./features/digest/RadarView";
 import { WikiView } from "./features/wiki/WikiView";
 import { WikiPageDetail } from "./features/wiki/WikiPageDetail";
@@ -18,9 +17,8 @@ import { searchContent } from "./services/dataHubService";
 import { searchWiki, getWikiPage } from "./services/wikiService";
 import type { CapturedContent } from "./types/content";
 import type { WikiPage } from "./types/wiki";
-// FloatingBubble is now a separate system-level window (see BubbleView.tsx)
 
-type TabId = "content" | "wiki" | "digest" | "datahub" | "settings";
+type TabId = "content" | "wiki" | "digest" | "settings";
 
 interface TabItem {
   id: TabId;
@@ -83,7 +81,6 @@ function App() {
     content: 0,
     wiki: 0,
     digest: 0,
-    datahub: 0,
     settings: 0,
   });
 
@@ -374,9 +371,6 @@ function App() {
         </div>
         <div style={{ display: activeTab === "digest" ? "block" : "none" }}>
           <RadarView active={activeTab === "digest"} />
-        </div>
-        <div style={{ display: activeTab === "datahub" ? "block" : "none" }}>
-          <DataHubView />
         </div>
         <div style={{ display: activeTab === "settings" ? "block" : "none" }}>
           <SettingsView />
