@@ -8,7 +8,7 @@ import { WikiAskSidebar } from "./WikiAskSidebar";
 
 type SubView = "browse" | "graph";
 
-export function WikiView() {
+export function WikiView({ active = true }: { active?: boolean }) {
   const { t } = useTranslation("wiki");
   const [subView, setSubView] = useState<SubView>("browse");
   const { stats, loadStats, selectPage } = useWikiStore();
@@ -93,7 +93,7 @@ export function WikiView() {
 
         {/* Sub-view content */}
         {subView === "browse" && <WikiBrowseView />}
-        {subView === "graph" && <WikiGraphView />}
+        {subView === "graph" && <WikiGraphView active={active} />}
       </div>
 
       {/* Right sidebar — Q&A chat */}

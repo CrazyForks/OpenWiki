@@ -18,6 +18,7 @@ interface RadarState {
   analyzedAt: string | null;
   hasNewContent: boolean;
   errorMessage: string | null;
+  errorCode: "formatUnrecognized" | "parseFailed" | null;
   isLoading: boolean;
 
   loadRadar: () => Promise<void>;
@@ -35,6 +36,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
   analyzedAt: null,
   hasNewContent: false,
   errorMessage: null,
+  errorCode: null,
   isLoading: true,
 
   loadRadar: async () => {
@@ -47,6 +49,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
       let analysis: BriefingAnalysis | null = null;
       let report: RadarReport | null = null;
       let errorMessage = result.insight?.error_message ?? null;
+      let errorCode: RadarState["errorCode"] = null;
       let status = result.status;
 
       if (result.insight?.analysis_json) {
@@ -59,11 +62,13 @@ export const useRadarStore = create<RadarState>((set, get) => ({
             analysis = normalized.analysis;
           } else {
             status = "error";
-            errorMessage = "分析结果格式无法识别，请重新生成";
+            errorMessage = null;
+            errorCode = "formatUnrecognized";
           }
         } catch {
           status = "error";
-          errorMessage = "分析结果解析失败，请重新生成";
+          errorMessage = null;
+          errorCode = "parseFailed";
         }
       }
 
@@ -77,6 +82,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
         analyzedAt: result.insight?.analyzed_at ?? null,
         hasNewContent: result.has_new_content,
         errorMessage,
+        errorCode,
         isLoading: false,
       });
 
@@ -89,6 +95,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
         isLoading: false,
         status: "error",
         errorMessage: e instanceof Error ? e.message : String(e),
+        errorCode: null,
       });
     }
   },
@@ -101,6 +108,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
       set({
         status: "error",
         errorMessage: e instanceof Error ? e.message : String(e),
+        errorCode: null,
       });
     }
   },

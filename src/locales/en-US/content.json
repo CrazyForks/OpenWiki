@@ -47,6 +47,7 @@
     "aiAnalyzing": "AI analyzing..."
   },
   "empty": "No content captured yet",
+  "loading": "Loading...",
   "emptyTitle": "No content saved yet",
   "emptyHint": "Copy text, take screenshots, or save links — content will appear here automatically",
   "captureOn": "Content capture enabled",

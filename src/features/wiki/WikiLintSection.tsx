@@ -51,7 +51,7 @@ export function WikiLintSection({ compact = false }: WikiLintSectionProps) {
       if (action === "keep") await wikiLintKeep(id);
       else if (action === "delete") await wikiLintDelete(id);
       else await wikiLintRecompile(id);
-      setResults(results.filter((r) => r.id !== id));
+      setResults((current) => current.filter((r) => r.id !== id));
     } catch (e) {
       console.error("Lint action failed:", e);
     }

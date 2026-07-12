@@ -1444,6 +1444,13 @@ pub fn dismiss_capture(app: tauri::AppHandle, image_path: Option<String>) -> Res
 
 /// Retry fetching URL content for a given content ID.
 /// Called from frontend when a URL read has failed.
+fn has_successful_url_body(raw_text: Option<&str>, source_url: &str) -> bool {
+    raw_text.is_some_and(|raw_text| {
+        let raw_text = raw_text.trim();
+        !raw_text.is_empty() && raw_text != source_url.trim() && !raw_text.starts_with("[读取失败]")
+    })
+}
+
 #[tauri::command]
 pub async fn retry_url_fetch(
     app: tauri::AppHandle,
@@ -1455,10 +1462,8 @@ pub async fn retry_url_fetch(
 
     // Find the content record and get its source_url
     let content = repo
-        .get_all_content(500, 0)
+        .get_content_by_id(&content_id)
         .map_err(|e| format!("DB error: {}", e))?
-        .into_iter()
-        .find(|c| c.id == content_id)
         .ok_or_else(|| "Content not found".to_string())?;
 
     let url = content
@@ -1487,7 +1492,16 @@ pub async fn retry_url_fetch(
                 let db_for_summary = db.clone();
                 let repo = crate::storage::repository::Repository::new(db);
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
-                    log::error!("Failed to update URL content on retry: {}", e);
+                    let error_message = format!("Failed to save fetched content: {}", e);
+                    log::error!("{}", error_message);
+                    let _ = app.emit(
+                        "content:url-fetched",
+                        serde_json::json!({
+                            "id": content_id,
+                            "failed": true,
+                            "error": error_message,
+                        }),
+                    );
                 } else {
                     log::info!(
                         "URL retry succeeded for {}: {} chars",
@@ -1519,11 +1533,31 @@ pub async fn retry_url_fetch(
             Err(e) => {
                 log::error!("URL retry failed for {}: {}", content_id, e);
                 let repo = crate::storage::repository::Repository::new(db);
-                let fail_msg = format!("[读取失败] {}\n\n原始链接: {}", e, url);
-                let _ = repo.update_content_for_url(&content_id, &fail_msg, &url);
+                let error_message = e.to_string();
+                let should_store_failure = match repo.get_content_by_id(&content_id) {
+                    Ok(Some(current)) => {
+                        !has_successful_url_body(current.raw_text.as_deref(), &url)
+                    }
+                    Ok(None) => false,
+                    Err(error) => {
+                        log::error!(
+                            "Failed to check current URL content after retry error: {}",
+                            error
+                        );
+                        false
+                    }
+                };
+                if should_store_failure {
+                    let fail_msg = format!("[读取失败] {}\n\n原始链接: {}", error_message, url);
+                    let _ = repo.update_content_for_url(&content_id, &fail_msg, &url);
+                }
                 let _ = app.emit(
                     "content:url-fetched",
-                    serde_json::json!({ "id": content_id, "failed": true }),
+                    serde_json::json!({
+                        "id": content_id,
+                        "failed": true,
+                        "error": error_message,
+                    }),
                 );
             }
         }
@@ -1541,10 +1575,8 @@ pub async fn ocr_image(state: State<'_, AppState>, content_id: String) -> Result
 
     // Find the content record
     let content = repo
-        .get_all_content(500, 0)
+        .get_content_by_id(&content_id)
         .map_err(|e| format!("DB error: {}", e))?
-        .into_iter()
-        .find(|c| c.id == content_id)
         .ok_or_else(|| "Content not found".to_string())?;
 
     let image_path = content
@@ -2386,6 +2418,21 @@ mod tests {
         let short_chinese = "这次可以了。还有一个人提交了 PR，你看到没？";
         assert!(short_chinese.len() >= MIN_SUMMARY_CHARS);
         assert!(summary_char_count(short_chinese) < MIN_SUMMARY_CHARS);
+    }
+
+    #[test]
+    fn retry_failure_only_replaces_missing_or_failed_url_text() {
+        let url = "https://example.com/article";
+        assert!(!has_successful_url_body(None, url));
+        assert!(!has_successful_url_body(Some(url), url));
+        assert!(!has_successful_url_body(
+            Some("[读取失败] timeout\n\n原始链接: https://example.com/article"),
+            url,
+        ));
+        assert!(has_successful_url_body(
+            Some("Successfully fetched article body"),
+            url,
+        ));
     }
 
     #[test]

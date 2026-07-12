@@ -369,7 +369,7 @@ function App() {
           <ContentList />
         </div>
         <div style={{ display: activeTab === "wiki" ? "block" : "none" }}>
-          <WikiView />
+          <WikiView active={activeTab === "wiki"} />
         </div>
         <div style={{ display: activeTab === "digest" ? "block" : "none" }}>
           <RadarView active={activeTab === "digest"} />

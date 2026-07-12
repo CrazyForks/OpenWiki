@@ -40,9 +40,15 @@ export function InsightDetail({ topic, idMap, contents, onBack }: InsightDetailP
     const item = contentId ? allContents.find((c) => c.id === contentId) : undefined;
     return { idx, contentId, item };
   });
-  const tagColor = topic.tag === t("insight.tag.coreInterest") ? "#FB923C"
-    : topic.tag === t("insight.tag.emergingInterest") ? "#4ADE80"
+  const tagColor = topic.tag === "核心关注" ? "#FB923C"
+    : topic.tag === "新兴关注" ? "#4ADE80"
     : "#3B82F6";
+  const tagLabels: Record<BriefingTopic["tag"], string> = {
+    "核心关注": t("insight.tag.coreInterest"),
+    "次要关注": t("insight.tag.secondaryInterest"),
+    "新兴关注": t("insight.tag.emergingInterest"),
+    "背景关注": t("insight.tag.backgroundInterest"),
+  };
 
   return (
     <div style={{ color: "var(--color-text-primary)" }}>
@@ -62,7 +68,7 @@ export function InsightDetail({ topic, idMap, contents, onBack }: InsightDetailP
       <div className="flex items-center gap-1.5 mb-2">
         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tagColor }} />
         <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: tagColor }}>
-          {topic.tag}
+          {tagLabels[topic.tag]}
         </span>
       </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
+import { motion } from "framer-motion";
 import { openAutomationSettings } from "../../services/automationService";
 
 /**
@@ -80,11 +81,13 @@ export function AutomationNotices() {
     <>
       {/* Red denial banner (sits just below the header) */}
       {bannerOpen && (
-        <div
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
           role="alert"
           className="sticky top-[40px] z-[9] border-b border-red-500/25
-                     bg-red-500/[0.08] backdrop-blur-xl
-                     animate-in fade-in slide-in-from-top-2 duration-300"
+                     bg-red-500/[0.08] backdrop-blur-xl"
         >
           <div className="flex items-center gap-3 px-4 py-2.5 max-w-full">
             <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -117,12 +120,15 @@ export function AutomationNotices() {
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Toast — bottom-right, 3s auto-dismiss */}
       {toast && (
-        <div
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
           key={toast.id}
           role="status"
           aria-live="polite"
@@ -130,8 +136,7 @@ export function AutomationNotices() {
                      flex items-center gap-2.5 px-4 py-3 rounded-xl
                      bg-green-900/95 border border-green-700/50
                      text-green-100 text-[13px]
-                     shadow-[0_20px_40px_rgba(0,0,0,0.5)]
-                     animate-in fade-in slide-in-from-bottom-4 duration-300"
+                     shadow-[0_20px_40px_rgba(0,0,0,0.5)]"
         >
           <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
           <span>
@@ -139,7 +144,7 @@ export function AutomationNotices() {
               ? t("toast.granted")
               : t("toast.dismissed")}
           </span>
-        </div>
+        </motion.div>
       )}
     </>
   );

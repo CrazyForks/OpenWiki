@@ -972,22 +972,25 @@ pub fn wiki_link_by_tags(state: State<'_, AppState>) -> Result<serde_json::Value
 #[tauri::command]
 pub async fn trigger_wiki_lint(state: State<'_, AppState>) -> Result<Vec<WikiLintResult>, String> {
     let repo = Repository::new(state.db.clone());
+    run_local_wiki_lint(&repo)
+}
 
+fn run_local_wiki_lint(repo: &Repository) -> Result<Vec<WikiLintResult>, String> {
     // Local checks first (no AI needed)
-    let mut results = Vec::new();
-
     // Check for needs_recompile pages
     let stale_pages = repo
         .get_wiki_pages_by_status("needs_recompile")
         .map_err(|e| e.to_string())?;
     for page in &stale_pages {
-        let _ = repo.save_lint_result(
+        let page_ids = serde_json::to_string(&[&page.id]).map_err(|e| e.to_string())?;
+        repo.save_lint_result(
             "stale",
             "warning",
             &format!("\"{}\" has stale sources", page.title),
             "Some sources have been updated or deleted, recompilation recommended",
-            &format!("[\"{}\"]", page.id),
-        );
+            &page_ids,
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     // Check for draft (tombstone) pages
@@ -995,18 +998,38 @@ pub async fn trigger_wiki_lint(state: State<'_, AppState>) -> Result<Vec<WikiLin
         .get_wiki_pages_by_status("draft")
         .map_err(|e| e.to_string())?;
     for page in &draft_pages {
-        let _ = repo.save_lint_result(
+        let page_ids = serde_json::to_string(&[&page.id]).map_err(|e| e.to_string())?;
+        repo.save_lint_result(
             "orphan",
             "critical",
             &format!("\"{}\" is invalid", page.title),
             "All sources have been deleted, please decide to keep or remove",
-            &format!("[\"{}\"]", page.id),
-        );
+            &page_ids,
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    results = repo.get_open_lint_results().map_err(|e| e.to_string())?;
+    let stale_page_ids: HashSet<&str> = stale_pages.iter().map(|page| page.id.as_str()).collect();
+    let draft_page_ids: HashSet<&str> = draft_pages.iter().map(|page| page.id.as_str()).collect();
+    let results = repo.get_open_lint_results().map_err(|e| e.to_string())?;
 
-    Ok(results)
+    for lint in &results {
+        let current_page_ids = match lint.lint_type.as_str() {
+            "stale" => Some(&stale_page_ids),
+            "orphan" => Some(&draft_page_ids),
+            _ => None,
+        };
+        let Some(current_page_ids) = current_page_ids else {
+            continue;
+        };
+        let page_ids: Vec<String> = serde_json::from_str(&lint.page_ids).unwrap_or_default();
+        if !page_ids.iter().any(|page_id| current_page_ids.contains(page_id.as_str())) {
+            repo.resolve_lint_result(lint.id)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    repo.get_open_lint_results().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1112,6 +1135,61 @@ pub fn get_content_wiki_pages(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::database::Database;
+    use std::sync::Arc;
+
+    fn make_lint_page(id: &str, status: &str) -> WikiPage {
+        WikiPage {
+            id: id.to_string(),
+            title: format!("Page {id}"),
+            slug: format!("page-{id}"),
+            page_type: "topic".to_string(),
+            body_markdown: "Body".to_string(),
+            summary: None,
+            tags: None,
+            status: status.to_string(),
+            confidence: 1.0,
+            created_at: "2026-07-12T10:00:00Z".to_string(),
+            updated_at: "2026-07-12T10:00:00Z".to_string(),
+            last_compiled_at: None,
+            source_message_id: None,
+        }
+    }
+
+    #[test]
+    fn lint_scan_deduplicates_persists_and_resolves_disappeared_problems() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let repo = Repository::new(db.clone());
+        repo.save_wiki_page(&make_lint_page("stale-page", "needs_recompile"))
+            .unwrap();
+        repo.save_wiki_page(&make_lint_page("draft-page", "draft"))
+            .unwrap();
+
+        let first = run_local_wiki_lint(&repo).unwrap();
+        assert_eq!(first.len(), 2);
+        let first_ids: HashSet<i64> = first.iter().map(|lint| lint.id).collect();
+        assert_eq!(run_local_wiki_lint(&repo).unwrap().len(), 2);
+        let third_ids: HashSet<i64> = run_local_wiki_lint(&repo)
+            .unwrap()
+            .iter()
+            .map(|lint| lint.id)
+            .collect();
+        assert_eq!(third_ids, first_ids);
+
+        drop(repo);
+        let restarted_repo = Repository::new(db);
+        let after_restart = restarted_repo.get_open_lint_results().unwrap();
+        assert_eq!(after_restart.len(), 2);
+        assert!(after_restart.iter().any(|lint| lint.lint_type == "orphan"));
+
+        restarted_repo
+            .update_wiki_page_status("stale-page", "active", 1.0)
+            .unwrap();
+        restarted_repo
+            .update_wiki_page_status("draft-page", "active", 1.0)
+            .unwrap();
+        assert!(run_local_wiki_lint(&restarted_repo).unwrap().is_empty());
+    }
 
     #[test]
     fn strips_inline_uuid_references() {

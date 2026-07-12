@@ -58,6 +58,10 @@
     "errorTitle": "洞察加载出错",
     "retry": "重试",
     "errorDefault": "分析时出现错误",
+    "errors": {
+      "formatUnrecognized": "分析结果格式无法识别，请重新生成",
+      "parseFailed": "分析结果解析失败，请重新生成"
+    },
     "reanalyze": "重新分析",
     "updating": "正在更新分析...",
     "analyzing": "正在深度分析你的内容...",
@@ -138,7 +142,9 @@
     "contentFallback": "内容 #{{idx}}",
     "tag": {
       "coreInterest": "核心关注",
-      "emergingInterest": "新兴关注"
+      "secondaryInterest": "次要关注",
+      "emergingInterest": "新兴关注",
+      "backgroundInterest": "背景关注"
     },
     "trend": {
       "growing": "↑ 持续增长",
