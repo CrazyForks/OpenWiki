@@ -47,6 +47,7 @@
     "aiAnalyzing": "AI 分析中..."
   },
   "empty": "还没有采集任何内容",
+  "loading": "加载中...",
   "emptyTitle": "还没有保存任何内容",
   "emptyHint": "复制文本或截图后会自动保存到这里",
   "captureOn": "内容捕获已开启",

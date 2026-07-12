@@ -67,6 +67,7 @@ function RadarViewInner({ active }: { active: boolean }) {
     analyzedAt,
     hasNewContent,
     errorMessage,
+    errorCode,
     isLoading,
     loadRadar,
     triggerAnalysis,
@@ -228,7 +229,7 @@ function RadarViewInner({ active }: { active: boolean }) {
         {!isLoading && status === "error" && (
           <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
             <p className="text-red-700 dark:text-red-400 mb-2" style={{ fontSize: 13 }}>
-              {errorMessage || t("radar.errorDefault")}
+              {errorCode ? t(`radar.errors.${errorCode}`) : errorMessage || t("radar.errorDefault")}
             </p>
             <button onClick={() => triggerAnalysis()} className="font-medium hover:underline" style={{ fontSize: 13, color: ACCENT }}>
               {t("radar.reanalyze")}
@@ -807,11 +808,12 @@ function ReportFooter({ footer }: { footer: Footer }) {
 
 function LegacyBriefingHero({ topic }: { topic: BriefingTopic }) {
   const { t } = useTranslation("digest");
+  const tagLabel = localizedTopicTag(t, topic.tag);
   return (
     <div className="rounded-xl p-4 mb-3" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: ACCENT }}>{topic.tag}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: ACCENT }}>{tagLabel}</span>
       </div>
       <h3 className="mb-3" style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.4, fontFamily: "'Cabinet Grotesk', sans-serif" }}>{topic.insight_title}</h3>
       {topic.key_findings.length > 0 && (
@@ -839,14 +841,15 @@ function LegacyBriefingHero({ topic }: { topic: BriefingTopic }) {
 
 function LegacyBriefingSecondary({ topic }: { topic: BriefingTopic }) {
   const { t } = useTranslation("digest");
-  const tagColor = topic.tag === t("insight.tag.emergingInterest") ? "#4ADE80" : "#3B82F6";
+  const tagColor = topic.tag === "新兴关注" ? "#4ADE80" : "#3B82F6";
+  const tagLabel = localizedTopicTag(t, topic.tag);
   const truncatedAnalysis = topic.deep_analysis.length > 80 ? topic.deep_analysis.slice(0, 80) + "..." : topic.deep_analysis;
 
   return (
     <div className="rounded-xl p-3" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
       <div className="flex items-center gap-1.5 mb-2">
         <span className="w-1 h-1 rounded-full" style={{ backgroundColor: tagColor }} />
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: tagColor }}>{topic.tag}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: tagColor }}>{tagLabel}</span>
       </div>
       <h4 className="mb-1.5" style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{topic.insight_title}</h4>
       <p className="mb-2.5" style={{ fontSize: 12, lineHeight: 1.5, color: "var(--color-text-muted)" }}>{truncatedAnalysis}</p>
@@ -860,6 +863,16 @@ function LegacyBriefingSecondary({ topic }: { topic: BriefingTopic }) {
 // ====================================================================
 // Helpers
 // ====================================================================
+
+function localizedTopicTag(t: ReturnType<typeof useTranslation>["t"], tag: BriefingTopic["tag"]): string {
+  const keys: Record<BriefingTopic["tag"], string> = {
+    "核心关注": "insight.tag.coreInterest",
+    "次要关注": "insight.tag.secondaryInterest",
+    "新兴关注": "insight.tag.emergingInterest",
+    "背景关注": "insight.tag.backgroundInterest",
+  };
+  return t(keys[tag]);
+}
 
 function HighlightText({ text, highlight }: { text: string; highlight: string }) {
   if (!highlight) return <>{text}</>;

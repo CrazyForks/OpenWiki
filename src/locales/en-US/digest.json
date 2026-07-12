@@ -58,6 +58,10 @@
     "errorTitle": "Failed to load insights",
     "retry": "Retry",
     "errorDefault": "An error occurred during analysis",
+    "errors": {
+      "formatUnrecognized": "The analysis format is not recognized. Please regenerate it.",
+      "parseFailed": "The analysis result could not be parsed. Please regenerate it."
+    },
     "reanalyze": "Re-analyze",
     "updating": "Updating analysis...",
     "analyzing": "Deeply analyzing your content...",
@@ -138,7 +142,9 @@
     "contentFallback": "Content #{{idx}}",
     "tag": {
       "coreInterest": "Core Interest",
-      "emergingInterest": "Emerging Interest"
+      "secondaryInterest": "Secondary Interest",
+      "emergingInterest": "Emerging Interest",
+      "backgroundInterest": "Background Interest"
     },
     "trend": {
       "growing": "↑ Growing",
