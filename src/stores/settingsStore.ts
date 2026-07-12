@@ -15,11 +15,17 @@ export interface AIModelOption {
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   anthropic: [
     { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-fable-5", label: "Claude Fable 5" },
+    { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+    { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
     { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   ],
   openai: [
     { id: "auto", label: "Auto" },
+    { id: "gpt-5.6", label: "GPT-5.6 Sol" },
+    { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+    { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
     { id: "gpt-5.5", label: "GPT-5.5" },
     { id: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
     { id: "gpt-5.4", label: "GPT-5.4" },
@@ -52,16 +58,24 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "openai/gpt-oss-20b:free", label: "GPT-OSS 20B", free: true, group: "More Free" },
     { id: "arcee-ai/trinity-large-preview:free", label: "Trinity Large 400B", free: true, group: "More Free" },
     // ── Anthropic ──
+    { id: "anthropic/claude-fable-5", label: "Claude Fable 5", group: "Anthropic" },
+    { id: "anthropic/claude-opus-4.8", label: "Claude Opus 4.8", group: "Anthropic" },
+    { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", group: "Anthropic" },
     { id: "anthropic/claude-opus-4.6", label: "Claude Opus 4.6", group: "Anthropic" },
     { id: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6", group: "Anthropic" },
     { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", group: "Anthropic" },
     // ── OpenAI ──
+    { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", group: "OpenAI" },
+    { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", group: "OpenAI" },
+    { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", group: "OpenAI" },
     { id: "openai/gpt-5.5", label: "GPT-5.5", group: "OpenAI" },
     { id: "openai/gpt-5.5-pro", label: "GPT-5.5 Pro", group: "OpenAI" },
     { id: "openai/gpt-5.4", label: "GPT-5.4", group: "OpenAI" },
     { id: "openai/gpt-5.2", label: "GPT-5.2", group: "OpenAI" },
     { id: "openai/gpt-5.1", label: "GPT-5.1", group: "OpenAI" },
     // ── Google ──
+    { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", group: "Google" },
+    { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", group: "Google" },
     { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", group: "Google" },
     { id: "google/gemini-3-pro-preview", label: "Gemini 3 Pro", group: "Google" },
     { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", group: "Google" },
@@ -71,6 +85,9 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", group: "DeepSeek" },
     { id: "deepseek/deepseek-v3.2-speciale", label: "DeepSeek V3.2 Speciale", group: "DeepSeek" },
     { id: "deepseek/deepseek-r1", label: "DeepSeek R1", group: "DeepSeek" },
+    // ── MiniMax ──
+    { id: "minimax/minimax-m3", label: "MiniMax M3", group: "MiniMax" },
+    { id: "minimax/minimax-m2.7", label: "MiniMax M2.7", group: "MiniMax" },
     // ── xAI ──
     { id: "x-ai/grok-4.20", label: "Grok 4.20", group: "xAI" },
     { id: "x-ai/grok-4.1-fast", label: "Grok 4.1 Fast", group: "xAI" },
@@ -78,6 +95,8 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "z-ai/glm-5.1", label: "GLM 5.1", group: "Zhipu" },
     { id: "z-ai/glm-5", label: "GLM 5", group: "Zhipu" },
     // ── Qwen ──
+    { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Qwen" },
+    { id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus", group: "Qwen" },
     { id: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus", group: "Qwen" },
     { id: "qwen/qwen3-coder-next", label: "Qwen3 Coder Next", group: "Qwen" },
     // ── Meta ──
@@ -87,6 +106,8 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   ],
   dashscope: [
     { id: "qwen3.6-plus", label: "Qwen3.6 Plus" },
+    { id: "qwen3.7-max", label: "Qwen3.7 Max" },
+    { id: "qwen3.7-plus", label: "Qwen3.7 Plus" },
     { id: "qwen-plus", label: "Qwen Plus" },
     { id: "qwen-turbo", label: "Qwen Turbo" },
     { id: "qwen-max", label: "Qwen Max" },
@@ -96,6 +117,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   ],
   google: [
     { id: "auto", label: "Auto" },
+    { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
     { id: "gemini-3-flash", label: "Gemini 3 Flash" },
     { id: "gemini-3-pro-low", label: "Gemini 3 Pro" },
     { id: "gemini-3-pro-high", label: "Gemini 3 Pro (Deep)" },
@@ -106,6 +128,8 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   ],
   minimax: [
     { id: "MiniMax-M2.7", label: "MiniMax M2.7" },
+    { id: "MiniMax-M3", label: "MiniMax M3" },
+    { id: "MiniMax-M2.7-highspeed", label: "MiniMax M2.7 Highspeed" },
     { id: "MiniMax-M2.5", label: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", label: "MiniMax M2.1" },
   ],
