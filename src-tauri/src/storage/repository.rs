@@ -2157,11 +2157,32 @@ impl Repository {
             .conn
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
-        conn.execute(
-            "INSERT INTO wiki_lint_results (lint_type, severity, title, description, page_ids, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'open', datetime('now'))",
+        let updated = conn.execute(
+            "UPDATE wiki_lint_results
+             SET severity=?2, title=?3, description=?4, created_at=datetime('now')
+             WHERE id = (
+                 SELECT MIN(id) FROM wiki_lint_results
+                 WHERE lint_type=?1 AND page_ids=?5 AND status='open'
+             )",
             params![lint_type, severity, title, description, page_ids],
         )?;
+        if updated == 0 {
+            conn.execute(
+                "INSERT INTO wiki_lint_results (lint_type, severity, title, description, page_ids, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'open', datetime('now'))",
+                params![lint_type, severity, title, description, page_ids],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE wiki_lint_results SET status='resolved'
+                 WHERE lint_type=?1 AND page_ids=?2 AND status='open'
+                   AND id <> (
+                       SELECT MIN(id) FROM wiki_lint_results
+                       WHERE lint_type=?1 AND page_ids=?2 AND status='open'
+                   )",
+                params![lint_type, page_ids],
+            )?;
+        }
         Ok(())
     }
 
@@ -2207,25 +2228,6 @@ impl Repository {
             params![id],
         )?;
         Ok(())
-    }
-
-    /// Batch-resolve all open lint results of a given type.
-    /// Used at app startup to clean up stale "source deleted" notifications
-    /// from before we stopped auto-generating them on content deletion.
-    pub fn resolve_lint_results_by_type(
-        &self,
-        lint_type: &str,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let conn = self
-            .db
-            .conn
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let n = conn.execute(
-            "UPDATE wiki_lint_results SET status='resolved' WHERE status='open' AND lint_type=?1",
-            params![lint_type],
-        )?;
-        Ok(n)
     }
 
     /// Recalculate confidence for a page based on its source health.
@@ -2824,6 +2826,39 @@ mod tests {
 
         let item = repo.get_content_by_id("item_500").unwrap().unwrap();
         assert_eq!(item.id, "item_500");
+    }
+
+    #[test]
+    fn save_lint_result_updates_one_open_record_and_resolves_duplicates() {
+        let db = test_db();
+        {
+            let conn = db.conn.lock().unwrap();
+            for title in ["Old title 1", "Old title 2"] {
+                conn.execute(
+                    "INSERT INTO wiki_lint_results
+                     (lint_type, severity, title, description, page_ids, status)
+                     VALUES ('orphan', 'critical', ?1, 'Old description', '[\"page-1\"]', 'open')",
+                    params![title],
+                )
+                .unwrap();
+            }
+        }
+        let repo = Repository::new(db);
+
+        repo.save_lint_result(
+            "orphan",
+            "warning",
+            "Updated title",
+            "Updated description",
+            "[\"page-1\"]",
+        )
+        .unwrap();
+
+        let open = repo.get_open_lint_results().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].title, "Updated title");
+        assert_eq!(open[0].description, "Updated description");
+        assert_eq!(open[0].severity, "warning");
     }
 
     #[test]

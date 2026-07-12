@@ -140,14 +140,6 @@ pub fn run() {
                     _ => {}
                 }
 
-                // Clean up legacy "source deleted" lint notifications from before
-                // we stopped auto-generating them. One-time cleanup — safe to run
-                // on every startup since it only touches open "orphan" lints.
-                match repo.resolve_lint_results_by_type("orphan") {
-                    Ok(n) if n > 0 => log::info!("Cleaned {} legacy orphan lint notifications", n),
-                    _ => {}
-                }
-
                 // Wipe the old tag-based "related" edges. The old algorithm
                 // connected any two pages sharing a single tag, which exploded
                 // the graph into a nearly-complete mess (988 pairs over 151
