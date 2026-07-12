@@ -135,15 +135,11 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
 
     let finished = false;
     let timeoutId: number | null = null;
-    const unlistenPromise = listen<{ id: string; failed?: boolean; error?: string }>(
-      "content:url-fetched",
-      (event) => {
-        if (event.payload.id === content.id) finish();
-      },
-    );
+    let unlisten: (() => void) | null = null;
     const cleanup = () => {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
-      void unlistenPromise.then((unlisten) => unlisten());
+      unlisten?.();
+      unlisten = null;
       retryCleanupRef.current = null;
     };
     const finish = () => {
@@ -156,9 +152,19 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       finished = true;
       cleanup();
     };
-    timeoutId = window.setTimeout(finish, URL_RETRY_TIMEOUT_MS);
 
     try {
+      unlisten = await listen<{ id: string; failed?: boolean; error?: string }>(
+        "content:url-fetched",
+        (event) => {
+          if (event.payload.id === content.id) finish();
+        },
+      );
+      if (finished) {
+        cleanup();
+        return;
+      }
+      timeoutId = window.setTimeout(finish, URL_RETRY_TIMEOUT_MS);
       await retryUrlFetch(content.id);
     } catch (e) {
       console.error("Retry failed:", e);

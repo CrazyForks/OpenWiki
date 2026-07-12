@@ -63,12 +63,32 @@ export function UpdateBanner() {
         throw new Error("Update package is not available");
       }
 
-      await update.download();
-      if (!cancelled) {
-        setDownloadedUpdate(update);
-        setFailureStage(null);
-        setPrepareState("ready");
+      if (cancelled) {
+        await update.close().catch((err) => {
+          console.error("[update] failed to close cancelled update:", err);
+        });
+        return;
       }
+
+      try {
+        await update.download();
+      } catch (err) {
+        await update.close().catch((closeErr) => {
+          console.error("[update] failed to close unsuccessful download:", closeErr);
+        });
+        throw err;
+      }
+
+      if (cancelled) {
+        await update.close().catch((err) => {
+          console.error("[update] failed to close cancelled download:", err);
+        });
+        return;
+      }
+
+      setDownloadedUpdate(update);
+      setFailureStage(null);
+      setPrepareState("ready");
     };
 
     prepareUpdate().catch((err) => {
