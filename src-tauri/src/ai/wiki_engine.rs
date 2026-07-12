@@ -557,6 +557,15 @@ pub async fn compile_content(
 }
 
 /// Auto-compile: assess + compile if worthy. Updates hashes.
+fn finish_auto_compile_error(
+    repo: &Repository,
+    content_id: &str,
+    error: &str,
+) -> Result<(), String> {
+    repo.release_compile_lock(content_id, "error", None, None, Some(error))
+        .map_err(|release_error| format!("Failed to record wiki compile error: {}", release_error))
+}
+
 pub async fn auto_compile(db: Arc<Database>, content_id: &str) -> Result<(), String> {
     let repo = Repository::new(db.clone());
     let content = repo
@@ -584,7 +593,7 @@ pub async fn auto_compile(db: Arc<Database>, content_id: &str) -> Result<(), Str
     let (should_compile, score, reason) = match assess_content(db.clone(), &content).await {
         Ok(result) => result,
         Err(e) => {
-            let _ = repo.release_compile_lock(content_id, "error", None, None, Some(&e));
+            finish_auto_compile_error(&repo, content_id, &e)?;
             return Err(e);
         }
     };
@@ -619,9 +628,8 @@ pub async fn auto_compile(db: Arc<Database>, content_id: &str) -> Result<(), Str
             Ok(())
         }
         Err(e) => {
-            // Don't update compile_hash on failure — will retry next time
-            let _ = repo.update_content_assessed_hash(content_id, &current_hash);
-            let _ = repo.release_compile_lock(content_id, "error", None, None, Some(&e));
+            // A failed compile remains unassessed so the same content can be retried.
+            finish_auto_compile_error(&repo, content_id, &e)?;
             Err(e)
         }
     }
@@ -925,6 +933,68 @@ pub fn on_content_updated(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::models::{CapturedContent, ContentType};
+
+    fn test_content(id: &str) -> CapturedContent {
+        CapturedContent {
+            id: id.to_string(),
+            content_type: ContentType::Text,
+            raw_text: Some("Test wiki content".to_string()),
+            image_path: None,
+            thumbnail_path: None,
+            source_app: "Test".to_string(),
+            source_bundle_id: None,
+            source_url: None,
+            user_note: None,
+            captured_at: "2026-07-12T10:00:00Z".to_string(),
+            content_hash: "source-hash".to_string(),
+            byte_size: 17,
+            is_deleted: false,
+            created_at: "2026-07-12T10:00:00Z".to_string(),
+            updated_at: "2026-07-12T10:00:00Z".to_string(),
+            digested_at: None,
+            digest_action: None,
+            summary: None,
+            tags: None,
+            digest: None,
+            wiki_compile_hash: None,
+            wiki_assessed_hash: None,
+            clean_content: None,
+            category: None,
+        }
+    }
+
+    #[test]
+    fn auto_compile_failure_keeps_content_retryable_and_records_error() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let repo = Repository::new(db.clone());
+        repo.save_content(&test_content("retryable")).unwrap();
+        repo.update_content_assessed_hash("retryable", "previous-hash")
+            .unwrap();
+        assert!(repo
+            .acquire_compile_lock("retryable", "compile-hash")
+            .unwrap());
+
+        finish_auto_compile_error(&repo, "retryable", "mock failure").unwrap();
+
+        let content = repo.get_content_by_id("retryable").unwrap().unwrap();
+        assert_eq!(content.wiki_assessed_hash.as_deref(), Some("previous-hash"));
+        let (status, error): (String, Option<String>) = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT status, error_message FROM wiki_compile_log WHERE content_id=?1",
+                ["retryable"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "error");
+        assert_eq!(error.as_deref(), Some("mock failure"));
+        assert!(repo
+            .acquire_compile_lock("retryable", "compile-hash")
+            .unwrap());
+    }
 
     #[test]
     fn parses_clean_json() {

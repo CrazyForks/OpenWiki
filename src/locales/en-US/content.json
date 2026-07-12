@@ -14,6 +14,7 @@
     "source": "From",
     "compileToWiki": "Add to Wiki",
     "compiledToWiki": "In Wiki",
+    "compileFailedRetry": "Failed, retry",
     "readFailed": "[Read Failed]",
     "noContent": "No content",
     "analyzing": "Analyzing...",
