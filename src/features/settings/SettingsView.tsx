@@ -1249,7 +1249,7 @@ function ExportSection({ totalItems }: { totalItems: number }) {
       // We just want the path on the clipboard so the user can
       // paste it into an AI tool.
       const path = await invoke<string>("export_all_single_quiet");
-      await navigator.clipboard.writeText(path);
+      await invoke("write_clipboard_text", { text: path });
       setCopiedPath(path);
       setCopyPathStatus("done");
       setTimeout(() => setCopyPathStatus("idle"), 4000);

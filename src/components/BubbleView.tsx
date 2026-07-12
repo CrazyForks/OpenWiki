@@ -185,7 +185,7 @@ export default function BubbleView() {
       `错误: ${failureError}`,
     ].join("\n");
     try {
-      await navigator.clipboard.writeText(report);
+      await invoke("write_clipboard_text", { text: report });
     } catch (e) {
       console.error("Copy failed:", e);
     }

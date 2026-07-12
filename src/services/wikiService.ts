@@ -124,3 +124,7 @@ export async function getPageSources(pageId: string): Promise<WikiPageSource[]> 
 export async function getContentWikiPages(contentId: string): Promise<WikiPage[]> {
   return invoke("get_content_wiki_pages", { contentId });
 }
+
+export async function getContentWikiPagesBatch(contentIds: string[]): Promise<Record<string, WikiPage[]>> {
+  return invoke("get_content_wiki_pages_batch", { contentIds });
+}

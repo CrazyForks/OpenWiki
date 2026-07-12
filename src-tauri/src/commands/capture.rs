@@ -851,6 +851,11 @@ pub fn save_captured_content(
     save_content_auto(&state.db, event)
 }
 
+#[tauri::command]
+pub fn write_clipboard_text(text: String) -> Result<(), String> {
+    crate::capture::clipboard::write_text_suppressed(&text)
+}
+
 /// Save content from the Spotlight window with a user note.
 /// Called when user presses Enter in the Spotlight input.
 ///
@@ -867,6 +872,16 @@ pub fn save_spotlight_content(
     user_note: String,
 ) -> Result<CapturedContent, String> {
     let repo = crate::storage::repository::Repository::new(state.db.clone());
+    let spotlight_hash = if content_type == "image" {
+        let path = image_path
+            .as_deref()
+            .ok_or_else(|| "Image capture has no source file".to_string())?;
+        compute_hash(&std::fs::read(path).map_err(|e| e.to_string())?)
+    } else if let Some(url) = raw_text.as_deref().and_then(detect_url) {
+        compute_hash(url.as_bytes())
+    } else {
+        compute_hash(raw_text.as_deref().unwrap_or("").as_bytes())
+    };
 
     let event = CaptureEvent {
         content_type,
@@ -882,12 +897,10 @@ pub fn save_spotlight_content(
     // Try saving — if duplicate, find the existing record instead
     let mut content = match save_content_auto(&state.db, event) {
         Ok(c) => c,
-        Err(e) if e.contains("Duplicate content") => {
-            // The clipboard watcher already saved this content.
-            // Recompute the hash to find it.
-            find_existing_content(&state.db)
-                .ok_or_else(|| "Content was deduplicated but could not be found".to_string())?
-        }
+        Err(e) if e.contains("Duplicate content") => repo
+            .find_content_by_hash(&spotlight_hash)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Content was deduplicated but could not be found".to_string())?,
         Err(e) => return Err(e),
     };
 
@@ -1394,14 +1407,6 @@ fn run_url_import(
 
 /// Find the most recently captured content item (used as fallback when
 /// spotlight save hits a duplicate from the clipboard watcher).
-fn find_existing_content(db: &Arc<Database>) -> Option<CapturedContent> {
-    let repo = crate::storage::repository::Repository::new(db.clone());
-    // Get the most recent item — it's almost certainly the one just auto-saved
-    repo.get_all_content(1, 0)
-        .ok()
-        .and_then(|v| v.into_iter().next())
-}
-
 fn suppress_reopen_temporarily(app: &tauri::AppHandle, duration: Duration) {
     let suppress_arc = app.state::<AppState>().suppress_reopen_until.clone();
     if let Ok(mut guard) = suppress_arc.lock() {

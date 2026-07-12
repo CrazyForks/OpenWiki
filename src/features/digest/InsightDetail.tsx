@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import type { BriefingTopic } from "../../services/radarService";
@@ -171,7 +172,7 @@ export function InsightDetail({ topic, idMap, contents, onBack }: InsightDetailP
               copied={copied}
               onCopy={async () => {
                 if (viewingContent.raw_text) {
-                  await navigator.clipboard.writeText(viewingContent.raw_text);
+                  await invoke("write_clipboard_text", { text: viewingContent.raw_text });
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }
