@@ -88,9 +88,10 @@ function RadarViewInner({ active }: { active: boolean }) {
 
   // Listen for analysis-complete events once.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    setupEventListener().then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    const unlistenPromise = setupEventListener();
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
   }, [setupEventListener]);
 
   // Re-check status every time this tab becomes active. The tab stays mounted
