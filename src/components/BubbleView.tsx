@@ -79,15 +79,15 @@ export default function BubbleView() {
 
   const closeWindow = useCallback(async () => {
     clearTimer();
+    const capture = pendingRef.current;
+    try { await invoke("dismiss_capture", { imagePath: capture?.image_path ?? null }); } catch {
+      // Cleanup is best effort; closing the bubble must still succeed.
+    }
     try { await appWindow.current.close(); } catch (e) { console.error("close failed:", e); }
   }, [clearTimer]);
 
   const dismiss = useCallback(async () => {
-    const capture = pendingRef.current;
     clearTimer();
-    try { await invoke("dismiss_capture", { imagePath: capture?.image_path ?? null }); } catch {
-      // Best-effort dismiss; the window should still close.
-    }
     await closeWindow();
   }, [clearTimer, closeWindow]);
 
@@ -162,12 +162,8 @@ export default function BubbleView() {
     setConfirmed(true);
 
     // Close window after 1.2 seconds
-    setTimeout(async () => {
-      try { await appWindow.current.close(); } catch {
-        // Window may already be gone.
-      }
-    }, 1200);
-  }, [saving, confirmed, clearTimer, memo, expanded, bubbleStyle, getCircleExpandLeftDelta]);
+    setTimeout(() => { void closeWindow(); }, 1200);
+  }, [saving, confirmed, clearTimer, memo, expanded, bubbleStyle, getCircleExpandLeftDelta, closeWindow]);
 
   // Retry from the failure state: reset failureError + saving, then call
   // confirm() again. confirm() will re-invoke the backend and route to
@@ -308,6 +304,10 @@ export default function BubbleView() {
     }
 
     const unlisten = listen<PendingCapture>("capture:pending", (event) => {
+      const previousPath = pendingRef.current?.image_path;
+      if (previousPath && previousPath !== event.payload.image_path) {
+        invoke("cleanup_pending_capture", { imagePath: previousPath }).catch(() => {});
+      }
       clearTimer(); setPending(event.payload); setCountdown(countdownMax);
       setExpanded(false); setMemo(""); setConfirmed(false); setSaving(false);
       pausedCountdownRef.current = null;
