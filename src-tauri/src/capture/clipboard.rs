@@ -9,14 +9,7 @@ use tauri::{AppHandle, Emitter};
 /// Save arboard::ImageData (raw RGBA pixels) to a PNG file on disk.
 /// Returns the file path if successful.
 fn save_clipboard_image_to_disk(img: &arboard::ImageData) -> Option<String> {
-    let base = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
-
-    let captures_dir = base.join("com.openwiki.app").join("captures");
-    if let Err(e) = std::fs::create_dir_all(&captures_dir) {
-        log::error!("Failed to create captures directory: {}", e);
-        return None;
-    }
+    let captures_dir = super::image_lifecycle::pending_images_dir().ok()?;
 
     let id = uuid::Uuid::new_v4().to_string();
     let file_path = captures_dir.join(format!("{}.png", id));
@@ -29,10 +22,11 @@ fn save_clipboard_image_to_disk(img: &arboard::ImageData) -> Option<String> {
         Some(buffer) => {
             if let Err(e) = buffer.save(&file_path) {
                 log::error!("Failed to save clipboard image to disk: {}", e);
+                let _ = std::fs::remove_file(&file_path);
                 return None;
             }
             let path_str = file_path.to_string_lossy().to_string();
-            log::info!("Clipboard image saved to disk: {}", path_str);
+            log::info!("Clipboard image saved as pending: {}", path_str);
             Some(path_str)
         }
         None => {

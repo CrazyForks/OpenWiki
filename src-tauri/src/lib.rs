@@ -215,6 +215,7 @@ pub fn run() {
             commands::capture::import_urls,
             commands::capture::confirm_capture,
             commands::capture::dismiss_capture,
+            commands::capture::cleanup_pending_capture,
             commands::capture::get_pending_capture,
             commands::capture::debug_log,
             commands::capture::retry_url_fetch,

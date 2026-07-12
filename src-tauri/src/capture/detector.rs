@@ -112,6 +112,14 @@ fn compute_dedup_keys(event: &serde_json::Value) -> Vec<String> {
     }
 }
 
+fn cleanup_event_pending_image(event: &serde_json::Value) {
+    if let Some(path) = event.get("image_path").and_then(|value| value.as_str()) {
+        if let Err(error) = super::image_lifecycle::cleanup_pending_image(path) {
+            log::debug!("Pending image was not owned by OpenWiki: {}", error);
+        }
+    }
+}
+
 fn is_xiaoyun_source_app(source_app: &str) -> bool {
     source_app.eq_ignore_ascii_case("xiaoyun")
 }
@@ -202,6 +210,10 @@ async fn fetch_url_content(content_id: String, url: String, db: Arc<Database>, a
 /// Parse JSON data into CaptureEvent and auto-save to database.
 /// This is a module-level function (not nested) for better async task spawning.
 fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
+    let pending_image_path = data
+        .get("image_path")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
     let db = {
         let state = app.state::<AppState>();
         state.db.clone()
@@ -383,16 +395,24 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
                 );
             } else {
                 log::error!("Failed to auto-save content: {}", e);
+                if let Some(path) = pending_image_path {
+                    let _ = super::image_lifecycle::cleanup_pending_image(&path);
+                }
             }
         }
     }
 }
 
 /// Store pending capture data in AppState for the bubble window to retrieve.
-fn store_pending_capture(app: &AppHandle, data: &serde_json::Value) {
+fn store_pending_capture(app: &AppHandle, data: &serde_json::Value, cleanup_replaced: bool) {
     let pending_arc = app.state::<AppState>().pending_capture.clone();
     let guard = pending_arc.lock();
     if let Ok(mut pending) = guard {
+        if cleanup_replaced {
+            if let Some(previous) = pending.as_ref() {
+                cleanup_event_pending_image(previous);
+            }
+        }
         *pending = Some(data.clone());
     }
 }
@@ -746,12 +766,13 @@ impl CaptureDetector {
                     };
 
                     if capture_mode == "confirm" {
+                        let bubble_exists = app_for_clipboard.get_webview_window("bubble").is_some();
                         // Store pending data in AppState so BubbleView can retrieve it
-                        store_pending_capture(&app_for_clipboard, &data);
+                        store_pending_capture(&app_for_clipboard, &data, !bubble_exists);
 
                         // If bubble already open, just emit event — let frontend decide
                         // whether to accept (circle mode) or ignore (expanded mode)
-                        if app_for_clipboard.get_webview_window("bubble").is_some() {
+                        if bubble_exists {
                             log::info!("Bubble window already open, emitting capture:pending for frontend to handle");
                             if let Err(e) = app_for_clipboard.emit("capture:pending", &data) {
                                 log::error!("Failed to emit capture:pending: {}", e);
@@ -779,6 +800,8 @@ impl CaptureDetector {
                     } else {
                         handle_auto_save(&app_for_clipboard, data);
                     }
+                } else {
+                    cleanup_event_pending_image(&data);
                 }
             }
         });
@@ -799,6 +822,8 @@ impl CaptureDetector {
                 if should_save {
                     // Screenshots always auto-save (no floating bubble needed)
                     handle_auto_save(&app_for_screenshot, data);
+                } else {
+                    cleanup_event_pending_image(&data);
                 }
             }
         });

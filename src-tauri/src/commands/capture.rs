@@ -10,10 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 
-/// The application data directory name for storing captured images.
-const APP_DATA_DIR: &str = "com.openwiki.app";
-const CAPTURES_SUBDIR: &str = "captures";
-const THUMBNAILS_SUBDIR: &str = "thumbnails";
 const THUMBNAIL_WIDTH: u32 = 200;
 const MIN_SUMMARY_CHARS: usize = 50;
 const URL_IMPORT_BATCH_SIZE: usize = 50;
@@ -101,28 +97,12 @@ struct PreparedUrlImport {
 
 /// Get the captures directory, creating it if necessary.
 fn get_captures_dir() -> Result<PathBuf, String> {
-    let base = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))
-        .ok_or_else(|| "Cannot determine application data directory".to_string())?;
-
-    let captures_dir = base.join(APP_DATA_DIR).join(CAPTURES_SUBDIR);
-    std::fs::create_dir_all(&captures_dir)
-        .map_err(|e| format!("Failed to create captures directory: {}", e))?;
-
-    Ok(captures_dir)
+    crate::capture::image_lifecycle::captures_dir()
 }
 
 /// Get the thumbnails directory, creating it if necessary.
 fn get_thumbnails_dir() -> Result<PathBuf, String> {
-    let base = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))
-        .ok_or_else(|| "Cannot determine application data directory".to_string())?;
-
-    let thumbnails_dir = base.join(APP_DATA_DIR).join(THUMBNAILS_SUBDIR);
-    std::fs::create_dir_all(&thumbnails_dir)
-        .map_err(|e| format!("Failed to create thumbnails directory: {}", e))?;
-
-    Ok(thumbnails_dir)
+    crate::capture::image_lifecycle::thumbnails_dir()
 }
 
 fn is_markdown_file(file_name: &str) -> bool {
@@ -517,33 +497,13 @@ fn convert_pdf_with_ocr(path: &Path) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-/// Copy a source image to the captures directory and return the new path.
-fn copy_image_to_captures(source_path: &str, id: &str) -> Result<String, String> {
-    let source = Path::new(source_path);
-    if !source.exists() {
-        return Err(format!("Source image does not exist: {}", source_path));
-    }
-
-    let extension = source
-        .extension()
-        .map(|e| e.to_string_lossy().to_string())
-        .unwrap_or_else(|| "png".to_string());
-
-    let captures_dir = get_captures_dir()?;
-    let dest_filename = format!("{}.{}", id, extension);
-    let dest_path = captures_dir.join(&dest_filename);
-
-    std::fs::copy(source, &dest_path)
-        .map_err(|e| format!("Failed to copy image to captures: {}", e))?;
-
-    let dest_str = dest_path.to_string_lossy().to_string();
-    log::info!("Image copied to captures: {}", dest_str);
-    Ok(dest_str)
-}
-
 /// Generate a thumbnail (200px wide, preserving aspect ratio) and save it.
 /// Returns the thumbnail path if successful.
-fn generate_thumbnail(source_path: &str, id: &str) -> Result<String, String> {
+fn generate_thumbnail_in(
+    source_path: &Path,
+    id: &str,
+    thumbnails_dir: &Path,
+) -> Result<PathBuf, String> {
     let img = image::open(source_path)
         .map_err(|e| format!("Failed to open image for thumbnail: {}", e))?;
 
@@ -558,7 +518,6 @@ fn generate_thumbnail(source_path: &str, id: &str) -> Result<String, String> {
 
     let thumbnail = img.thumbnail(new_width, new_height);
 
-    let thumbnails_dir = get_thumbnails_dir()?;
     let thumb_filename = format!("{}_thumb.png", id);
     let thumb_path = thumbnails_dir.join(&thumb_filename);
 
@@ -566,16 +525,136 @@ fn generate_thumbnail(source_path: &str, id: &str) -> Result<String, String> {
         .save(&thumb_path)
         .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
 
-    let thumb_str = thumb_path.to_string_lossy().to_string();
     log::info!(
         "Thumbnail generated: {} ({}x{} -> {}x{})",
-        thumb_str,
+        thumb_path.display(),
         orig_width,
         orig_height,
         new_width,
         new_height
     );
-    Ok(thumb_str)
+    Ok(thumb_path)
+}
+
+struct ImageStorageDirs {
+    captures: PathBuf,
+    pending: PathBuf,
+    thumbnails: PathBuf,
+}
+
+impl ImageStorageDirs {
+    fn production() -> Result<Self, String> {
+        Ok(Self {
+            captures: get_captures_dir()?,
+            pending: crate::capture::image_lifecycle::pending_images_dir()?,
+            thumbnails: get_thumbnails_dir()?,
+        })
+    }
+}
+
+struct PreparedImage {
+    final_path: PathBuf,
+    thumbnail_path: Option<PathBuf>,
+    pending_source: Option<PathBuf>,
+    pending_dir: Option<PathBuf>,
+    moved_from_pending: bool,
+}
+
+impl PreparedImage {
+    fn rollback(&self) -> Result<(), String> {
+        if let Some(thumbnail) = &self.thumbnail_path {
+            let _ = std::fs::remove_file(thumbnail);
+        }
+        if self.moved_from_pending {
+            if let Some(source) = &self.pending_source {
+                if let Err(error) = std::fs::rename(&self.final_path, source) {
+                    std::fs::copy(&self.final_path, source).map_err(|copy_error| {
+                        format!(
+                            "Failed to restore pending image after save error: {}; fallback copy failed: {}",
+                            error, copy_error
+                        )
+                    })?;
+                    std::fs::remove_file(&self.final_path).map_err(|remove_error| {
+                        format!(
+                            "Restored pending image but failed to remove final copy: {}",
+                            remove_error
+                        )
+                    })?;
+                }
+            }
+        } else {
+            let _ = std::fs::remove_file(&self.final_path);
+        }
+        Ok(())
+    }
+
+    fn finish(&self) {
+        if !self.moved_from_pending {
+            if let (Some(source), Some(pending_dir)) = (&self.pending_source, &self.pending_dir) {
+                let _ =
+                    crate::capture::image_lifecycle::cleanup_pending_image_in(source, pending_dir);
+            }
+        }
+    }
+}
+
+fn prepare_image_for_save_in(
+    source_path: &str,
+    id: &str,
+    dirs: &ImageStorageDirs,
+) -> Result<PreparedImage, String> {
+    let source = Path::new(source_path);
+    if !source.is_file() {
+        return Err(format!("Source image does not exist: {}", source_path));
+    }
+    let extension = source
+        .extension()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "png".to_string());
+    let final_path = dirs.captures.join(format!("{}.{}", id, extension));
+    let is_pending =
+        crate::capture::image_lifecycle::is_owned_pending_image_in(source, &dirs.pending);
+    let moved_from_pending = if is_pending {
+        match std::fs::rename(source, &final_path) {
+            Ok(_) => true,
+            Err(_) => {
+                std::fs::copy(source, &final_path)
+                    .map_err(|error| format!("Failed to copy pending image: {}", error))?;
+                false
+            }
+        }
+    } else {
+        std::fs::copy(source, &final_path)
+            .map_err(|error| format!("Failed to copy image to captures: {}", error))?;
+        false
+    };
+    let thumbnail_path = match generate_thumbnail_in(&final_path, id, &dirs.thumbnails) {
+        Ok(path) => path,
+        Err(error) => {
+            let prepared = PreparedImage {
+                final_path,
+                thumbnail_path: None,
+                pending_source: is_pending.then(|| source.to_path_buf()),
+                pending_dir: is_pending.then(|| dirs.pending.clone()),
+                moved_from_pending,
+            };
+            prepared
+                .rollback()
+                .map_err(|rollback| format!("{}; {}", error, rollback))?;
+            return Err(error);
+        }
+    };
+    Ok(PreparedImage {
+        final_path,
+        thumbnail_path: Some(thumbnail_path),
+        pending_source: is_pending.then(|| source.to_path_buf()),
+        pending_dir: is_pending.then(|| dirs.pending.clone()),
+        moved_from_pending,
+    })
+}
+
+fn prepare_image_for_save(source_path: &str, id: &str) -> Result<PreparedImage, String> {
+    prepare_image_for_save_in(source_path, id, &ImageStorageDirs::production()?)
 }
 
 /// Internal auto-save function called directly from CaptureDetector.
@@ -583,6 +662,14 @@ fn generate_thumbnail(source_path: &str, id: &str) -> Result<String, String> {
 pub fn save_content_auto(
     db: &Arc<Database>,
     event: CaptureEvent,
+) -> Result<CapturedContent, String> {
+    save_content_auto_in(db, event, None)
+}
+
+fn save_content_auto_in(
+    db: &Arc<Database>,
+    event: CaptureEvent,
+    image_dirs: Option<&ImageStorageDirs>,
 ) -> Result<CapturedContent, String> {
     let now = Utc::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
@@ -607,48 +694,56 @@ pub fn save_content_auto(
         }
     };
 
-    let (final_image_path, thumbnail_path) = if content_type.as_str() == "image" {
-        if let Some(ref src_path) = image_path {
-            let copied_path = match copy_image_to_captures(src_path, &id) {
-                Ok(p) => Some(p),
-                Err(e) => {
-                    log::error!("Failed to copy image: {}", e);
-                    image_path.clone()
-                }
-            };
-
-            let thumb_source = copied_path.as_deref().unwrap_or(src_path.as_str());
-            let thumb_path = match generate_thumbnail(thumb_source, &id) {
-                Ok(p) => Some(p),
-                Err(e) => {
-                    log::error!("Failed to generate thumbnail: {}", e);
-                    None
-                }
-            };
-
-            (copied_path, thumb_path)
-        } else {
-            (None, None)
-        }
-    } else {
-        (image_path, None)
-    };
-
-    // For hash computation, use actual image bytes and normalized URLs so
-    // duplicate imports are detected even when the copied file path changes.
-    let content_hash = if let Some(ref path) = final_image_path {
-        match std::fs::read(path) {
-            Ok(bytes) => compute_hash(&bytes),
-            Err(_) => {
-                let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-                compute_hash(format!("img:{}:{}", path, file_size).as_bytes())
-            }
-        }
+    // Hash source bytes before creating any permanent files, so duplicates never
+    // produce an extra image or thumbnail.
+    let content_hash = if content_type.as_str() == "image" {
+        let path = image_path
+            .as_deref()
+            .ok_or_else(|| "Image capture has no source file".to_string())?;
+        let bytes = std::fs::read(path)
+            .map_err(|error| format!("Failed to read image for hashing: {}", error))?;
+        compute_hash(&bytes)
     } else if let Some(ref url) = detected_url {
         compute_hash(url.as_bytes())
     } else {
         compute_hash(raw_text.as_deref().unwrap_or("").as_bytes())
     };
+
+    let repo = crate::storage::repository::Repository::new(db.clone());
+    if let Ok(Some(existing)) = repo.find_content_by_hash(&content_hash) {
+        let _ = repo.touch_captured_at(&existing.id);
+        if let Some(path) = image_path.as_deref() {
+            if let Some(dirs) = image_dirs {
+                let _ = crate::capture::image_lifecycle::cleanup_pending_image_in(
+                    Path::new(path),
+                    &dirs.pending,
+                );
+            } else {
+                let _ = crate::capture::image_lifecycle::cleanup_pending_image(path);
+            }
+        }
+        log::info!("Duplicate content detected, moved to top: {}", existing.id);
+        return Err("Duplicate content".to_string());
+    }
+
+    let prepared_image = if content_type.as_str() == "image" {
+        let source = image_path
+            .as_deref()
+            .ok_or_else(|| "Image capture has no source file".to_string())?;
+        Some(match image_dirs {
+            Some(dirs) => prepare_image_for_save_in(source, &id, dirs)?,
+            None => prepare_image_for_save(source, &id)?,
+        })
+    } else {
+        None
+    };
+    let final_image_path = prepared_image
+        .as_ref()
+        .map(|image| image.final_path.to_string_lossy().to_string());
+    let thumbnail_path = prepared_image
+        .as_ref()
+        .and_then(|image| image.thumbnail_path.as_ref())
+        .map(|path| path.to_string_lossy().to_string());
 
     let byte_size = if let Some(ref path) = final_image_path {
         std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0)
@@ -658,18 +753,6 @@ pub fn save_content_auto(
 
     // For URL content, use the clean detected URL (trimmed) as source_url
     let source_url = detected_url.clone();
-
-    // Check for duplicate content — if found, move it to the top by updating captured_at
-    let repo = crate::storage::repository::Repository::new(db.clone());
-    if let Ok(Some(existing)) = repo.find_content_by_hash(&content_hash) {
-        let _ = repo.touch_captured_at(&existing.id);
-        log::info!(
-            "Duplicate content detected (hash={}), moved to top: {}",
-            &content_hash[..16],
-            existing.id
-        );
-        return Err("Duplicate content".to_string());
-    }
 
     let content = CapturedContent {
         id: id.clone(),
@@ -698,7 +781,17 @@ pub fn save_content_auto(
         category: None,
     };
 
-    repo.save_content(&content).map_err(|e| e.to_string())?;
+    if let Err(error) = repo.save_content(&content) {
+        if let Some(image) = &prepared_image {
+            image
+                .rollback()
+                .map_err(|rollback| format!("{}; {}", error, rollback))?;
+        }
+        return Err(error.to_string());
+    }
+    if let Some(image) = &prepared_image {
+        image.finish();
+    }
 
     log::info!(
         "Content auto-saved: {} (type={}, size={} bytes)",
@@ -1316,6 +1409,23 @@ fn suppress_reopen_temporarily(app: &tauri::AppHandle, duration: Duration) {
     };
 }
 
+fn cleanup_stored_pending_capture(state: &State<'_, AppState>, keep_path: Option<&str>) {
+    let pending = state
+        .pending_capture
+        .lock()
+        .ok()
+        .and_then(|mut value| value.take());
+    if let Some(path) = pending
+        .as_ref()
+        .and_then(|value| value.get("image_path"))
+        .and_then(|value| value.as_str())
+    {
+        if Some(path) != keep_path {
+            let _ = crate::capture::image_lifecycle::cleanup_pending_image(path);
+        }
+    }
+}
+
 /// Called by the floating bubble when user confirms saving the captured content.
 /// Receives the same JSON data that was originally sent as `capture:pending`.
 #[tauri::command]
@@ -1332,6 +1442,7 @@ pub fn confirm_capture(
     // NOTE: Do NOT close the bubble window here.
     // The frontend shows a green checkmark animation for 1.5s before closing itself.
     suppress_reopen_temporarily(&app, Duration::from_secs(5));
+    cleanup_stored_pending_capture(&state, image_path.as_deref());
 
     let event = CaptureEvent {
         content_type,
@@ -1423,21 +1534,30 @@ pub fn get_pending_capture(
 /// Called by the floating bubble when countdown expires (user didn't confirm).
 /// Cleans up temporary image file if one was created.
 #[tauri::command]
-pub fn dismiss_capture(app: tauri::AppHandle, image_path: Option<String>) -> Result<(), String> {
+pub fn dismiss_capture(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    image_path: Option<String>,
+) -> Result<(), String> {
     suppress_reopen_temporarily(&app, Duration::from_secs(5));
 
     // Hide bubble window from Rust side (backup)
     hide_bubble_window(&app);
 
+    cleanup_stored_pending_capture(&state, None);
     if let Some(ref path) = image_path {
-        let p = std::path::Path::new(path);
-        if p.exists() {
-            if let Err(e) = std::fs::remove_file(p) {
-                log::warn!("Failed to cleanup temp image {}: {}", path, e);
-            } else {
-                log::info!("Cleaned up dismissed capture image: {}", path);
-            }
+        if let Err(error) = crate::capture::image_lifecycle::cleanup_pending_image(path) {
+            log::debug!("Dismiss skipped non-pending image: {}", error);
         }
+    }
+    Ok(())
+}
+
+/// Clean up an image replaced by a newer pending clipboard capture.
+#[tauri::command]
+pub fn cleanup_pending_capture(image_path: Option<String>) -> Result<(), String> {
+    if let Some(path) = image_path {
+        crate::capture::image_lifecycle::cleanup_pending_image(&path)?;
     }
     Ok(())
 }
@@ -2413,6 +2533,42 @@ pub async fn test_ai_connection(
 mod tests {
     use super::*;
 
+    fn test_image_dirs(root: &Path) -> ImageStorageDirs {
+        let captures = root.join("captures");
+        let pending = captures.join(".pending");
+        let thumbnails = root.join("thumbnails");
+        std::fs::create_dir_all(&pending).unwrap();
+        std::fs::create_dir_all(&thumbnails).unwrap();
+        ImageStorageDirs {
+            captures,
+            pending,
+            thumbnails,
+        }
+    }
+
+    fn write_test_png(path: &Path, color: [u8; 4]) {
+        let image = image::RgbaImage::from_pixel(4, 3, image::Rgba(color));
+        image.save(path).unwrap();
+    }
+
+    fn image_event(path: &Path) -> CaptureEvent {
+        CaptureEvent {
+            content_type: "image".to_string(),
+            preview: "test image".to_string(),
+            source_app: "test".to_string(),
+            raw_text: None,
+            image_path: Some(path.to_string_lossy().to_string()),
+        }
+    }
+
+    fn file_count(path: &Path) -> usize {
+        std::fs::read_dir(path)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().is_file())
+            .count()
+    }
+
     #[test]
     fn summary_char_count_uses_real_characters_not_bytes() {
         let short_chinese = "这次可以了。还有一个人提交了 PR，你看到没？";
@@ -2525,5 +2681,91 @@ mod tests {
             "a".repeat(MAX_IMPORTED_URL_LENGTH)
         );
         assert_eq!(normalize_imported_url(&oversized_url), None);
+    }
+
+    #[test]
+    fn pending_image_save_moves_to_permanent_storage() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = test_image_dirs(root.path());
+        let source = dirs.pending.join("pending.png");
+        write_test_png(&source, [12, 34, 56, 255]);
+
+        let prepared = prepare_image_for_save_in(source.to_str().unwrap(), "saved", &dirs).unwrap();
+        assert!(!source.exists());
+        assert!(prepared.final_path.is_file());
+        assert!(prepared.thumbnail_path.as_ref().unwrap().is_file());
+
+        prepared.finish();
+        assert!(prepared.final_path.is_file());
+        assert_eq!(file_count(&dirs.pending), 0);
+    }
+
+    #[test]
+    fn external_image_import_copies_without_deleting_source() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = test_image_dirs(root.path());
+        let source = root.path().join("external.png");
+        write_test_png(&source, [90, 80, 70, 255]);
+
+        let prepared =
+            prepare_image_for_save_in(source.to_str().unwrap(), "imported", &dirs).unwrap();
+        prepared.finish();
+
+        assert!(source.is_file());
+        assert!(prepared.final_path.is_file());
+        assert!(prepared.thumbnail_path.as_ref().unwrap().is_file());
+    }
+
+    #[test]
+    fn database_failure_restores_pending_image_and_removes_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = test_image_dirs(root.path());
+        let source = dirs.pending.join("pending.png");
+        write_test_png(&source, [1, 2, 3, 255]);
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE captured_content")
+            .unwrap();
+
+        assert!(save_content_auto_in(&db, image_event(&source), Some(&dirs)).is_err());
+        assert!(source.is_file());
+        assert_eq!(file_count(&dirs.captures), 0);
+        assert_eq!(file_count(&dirs.thumbnails), 0);
+    }
+
+    #[test]
+    fn thumbnail_failure_restores_pending_image_and_removes_final_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = test_image_dirs(root.path());
+        let source = dirs.pending.join("invalid.png");
+        std::fs::write(&source, b"not a png").unwrap();
+
+        assert!(prepare_image_for_save_in(source.to_str().unwrap(), "invalid", &dirs).is_err());
+        assert!(source.is_file());
+        assert_eq!(file_count(&dirs.captures), 0);
+        assert_eq!(file_count(&dirs.thumbnails), 0);
+    }
+
+    #[test]
+    fn duplicate_image_cleans_pending_without_creating_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let dirs = test_image_dirs(root.path());
+        let first = dirs.pending.join("first.png");
+        write_test_png(&first, [7, 8, 9, 255]);
+        let db = Arc::new(Database::new_in_memory().unwrap());
+
+        save_content_auto_in(&db, image_event(&first), Some(&dirs)).unwrap();
+        let captures_before = file_count(&dirs.captures);
+        let thumbnails_before = file_count(&dirs.thumbnails);
+        let duplicate = dirs.pending.join("duplicate.png");
+        write_test_png(&duplicate, [7, 8, 9, 255]);
+
+        let error = save_content_auto_in(&db, image_event(&duplicate), Some(&dirs)).unwrap_err();
+        assert_eq!(error, "Duplicate content");
+        assert!(!duplicate.exists());
+        assert_eq!(file_count(&dirs.captures), captures_before);
+        assert_eq!(file_count(&dirs.thumbnails), thumbnails_before);
     }
 }
