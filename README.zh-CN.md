@@ -44,7 +44,6 @@
 ### 📂 内容管理
 - 按类型（文本 / 图片 / 链接）和时间范围过滤
 - 全局搜索，跨内容和知识库同时检索
-- 日历时间线视图，按天浏览历史
 - 一键导出为 Markdown 文件
 
 ### 🧠 AI 知识库
@@ -84,12 +83,11 @@
 
 #### macOS
 
-由于应用未经 Apple 签名，macOS 可能会拦截：
+应用已完成 Apple 签名与公证，双击即可打开，不会被系统拦截：
 
 1. 打开 `.dmg`，将 OpenWiki 拖入「应用程序」文件夹
-2. **打开终端，执行 `xattr -cr /Applications/OpenWiki.app` ，允许应用运行**
-3. 运行应用，在弹出的授权窗口点击“允许”
-4. 在应用的“设置”->“AI”中配置 AI 提供商信息
+2. 运行应用，在弹出的授权窗口点击“允许”
+3. 在应用的“设置”->“AI”中配置 AI 提供商信息
 
 #### Windows
 
@@ -99,14 +97,6 @@ Windows 版本暂未进行代码签名，首次运行时 Microsoft Defender Smar
 2. 如果出现 SmartScreen 提示，点击“更多信息”->“仍要运行”
 3. 从开始菜单或桌面快捷方式启动 OpenWiki
 4. 在应用的“设置”->“AI”中配置 AI 提供商信息
-
-### 已知的外部依赖
-
-以下功能需要额外安装工具，不影响其他功能使用：
-
-| 功能 | 需要安装 | 安装方式 |
-|---|---|---|
-| YouTube 字幕抓取 | yt-dlp + Node.js | `pip3 install yt-dlp` + [nodejs.org](https://nodejs.org) |
 
 ## 开发指南
 
@@ -151,7 +141,6 @@ npm run tauri build
 ## 致谢
 
 - [Andrej Karpathy](https://github.com/karpathy) — 他的 [LLM Wiki 构想](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 启发了知识库的设计
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube 字幕提取
 
 ## 特别鸣谢
 

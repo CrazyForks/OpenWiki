@@ -44,7 +44,6 @@
 ### 📂 Content Management
 - Filter by type (text / image / link) and time range
 - Global search across content and knowledge base
-- Calendar timeline view — browse history by day
 - One-click export to Markdown
 
 ### 🧠 AI Knowledge Base
@@ -84,12 +83,11 @@ Choose the steps for your operating system.
 
 #### macOS
 
-The app is not signed with an Apple Developer certificate, so macOS may block it:
+The app is signed and notarized by Apple — just double-click to open, no security bypass needed:
 
 1. Open the `.dmg` and drag OpenWiki into the Applications folder
-2. **Open Terminal and run `xattr -cr /Applications/OpenWiki.app`** to allow the app to run
-3. Launch the app and click "Allow" in the authorization prompt
-4. Go to Settings → AI to configure your AI provider
+2. Launch the app and click "Allow" in the authorization prompt
+3. Go to Settings → AI to configure your AI provider
 
 #### Windows
 
@@ -99,14 +97,6 @@ The Windows build is unsigned, so Microsoft Defender SmartScreen may warn on fir
 2. If SmartScreen appears, choose **More info** → **Run anyway**
 3. Launch OpenWiki from the Start menu or desktop shortcut
 4. Go to Settings → AI to configure your AI provider
-
-### Optional Dependencies
-
-These features require additional tools. Other features work without them:
-
-| Feature | Requires | Install |
-|---|---|---|
-| YouTube subtitle extraction | yt-dlp + Node.js | `pip3 install yt-dlp` + [nodejs.org](https://nodejs.org) |
 
 ## Development
 
@@ -151,7 +141,6 @@ Contributions welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for development w
 ## Acknowledgments
 
 - [Andrej Karpathy](https://github.com/karpathy) — his [LLM Wiki idea](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) inspired the knowledge base design
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube subtitle extraction
 
 ## Special Thanks
 
