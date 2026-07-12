@@ -46,6 +46,7 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadFromDB = useSettingsStore((s) => s.loadFromDB);
+  const sensitiveFilterEnabled = useSettingsStore((s) => s.sensitiveFilterEnabled);
   const setHighlightedIds = useContentStore((s) => s.setHighlightedIds);
   const deleteWikiPageInStore = useWikiStore((s) => s.deletePage);
   const [previewWikiPage, setPreviewWikiPage] = useState<WikiPage | null>(null);
@@ -63,7 +64,7 @@ function App() {
     searchTimerRef.current = setTimeout(async () => {
       try {
         const [contentResults, wikiResults] = await Promise.all([
-          searchContent(query.trim()),
+          searchContent(query.trim(), sensitiveFilterEnabled),
           searchWiki(query.trim()),
         ]);
         setSearchResults(contentResults);
@@ -75,7 +76,7 @@ function App() {
       }
       setSearching(false);
     }, 300);
-  }, []);
+  }, [sensitiveFilterEnabled]);
 
   // Track scroll positions per tab for restore on switch-back
   const scrollPositions = useRef<Record<TabId, number>>({

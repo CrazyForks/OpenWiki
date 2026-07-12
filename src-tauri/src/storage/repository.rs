@@ -5,6 +5,7 @@ use super::models::{
 };
 use crate::secure_store;
 use rusqlite::{params, OptionalExtension};
+use rusqlite::{params_from_iter, types::Value};
 use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -119,11 +120,154 @@ impl Repository {
         Ok(results)
     }
 
+    pub fn query_content(
+        &self,
+        filter: &str,
+        start_at: Option<&str>,
+        hide_sensitive: bool,
+        limit: i64,
+        offset: i64,
+    ) -> Result<
+        (
+            Vec<CapturedContent>,
+            i64,
+            std::collections::HashMap<String, i64>,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut base = vec!["is_deleted = 0".to_string()];
+        let mut base_params: Vec<Value> = Vec::new();
+        if let Some(start) = start_at {
+            base.push("captured_at >= ?".to_string());
+            base_params.push(start.to_string().into());
+        }
+        if hide_sensitive {
+            base.push("contains_sensitive(COALESCE(raw_text, '')) = 0".to_string());
+        }
+        let base_where = base.join(" AND ");
+        let filter_clause = match filter {
+            "document" => "source_app IN ('Markdown 导入', '导入内容')",
+            "text" | "image" | "url" => {
+                "content_type = ? AND source_app NOT IN ('Markdown 导入', '导入内容')"
+            }
+            _ => "1 = 1",
+        };
+        let mut query_params = base_params.clone();
+        if matches!(filter, "text" | "image" | "url") {
+            query_params.push(filter.to_string().into());
+        }
+        let total_sql = format!(
+            "SELECT COUNT(*) FROM captured_content WHERE {} AND {}",
+            base_where, filter_clause
+        );
+        let total: i64 =
+            conn.query_row(&total_sql, params_from_iter(query_params.clone()), |row| {
+                row.get(0)
+            })?;
+
+        let counts_sql = format!(
+            "SELECT COUNT(*),
+                COALESCE(SUM(CASE WHEN content_type = 'text' AND source_app NOT IN ('Markdown 导入', '导入内容') THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN content_type = 'image' AND source_app NOT IN ('Markdown 导入', '导入内容') THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN content_type = 'url' AND source_app NOT IN ('Markdown 导入', '导入内容') THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN source_app IN ('Markdown 导入', '导入内容') THEN 1 ELSE 0 END), 0)
+             FROM captured_content WHERE {}",
+            base_where
+        );
+        let values: (i64, i64, i64, i64, i64) =
+            conn.query_row(&counts_sql, params_from_iter(base_params.clone()), |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?;
+        let counts = std::collections::HashMap::from([
+            ("all".to_string(), values.0),
+            ("text".to_string(), values.1),
+            ("image".to_string(), values.2),
+            ("url".to_string(), values.3),
+            ("document".to_string(), values.4),
+        ]);
+
+        query_params.push(limit.into());
+        query_params.push(offset.into());
+        let sql = format!(
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
+             FROM captured_content WHERE {} AND {} ORDER BY captured_at DESC, id DESC LIMIT ? OFFSET ?",
+            base_where, filter_clause
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(query_params), |row| {
+            Ok(CapturedContent {
+                id: row.get(0)?,
+                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
+                raw_text: row.get(2)?,
+                image_path: row.get(3)?,
+                thumbnail_path: row.get(4)?,
+                source_app: row.get(5)?,
+                source_bundle_id: row.get(6)?,
+                source_url: row.get(7)?,
+                user_note: row.get(8)?,
+                captured_at: row.get(9)?,
+                content_hash: row.get(10)?,
+                byte_size: row.get(11)?,
+                is_deleted: row.get::<_, i32>(12)? != 0,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
+                digested_at: row.get(15).unwrap_or(None),
+                digest_action: row.get(16).unwrap_or(None),
+                summary: row.get(17).unwrap_or(None),
+                tags: row.get(18).unwrap_or(None),
+                digest: row.get(19).unwrap_or(None),
+                wiki_compile_hash: row.get(20).unwrap_or(None),
+                wiki_assessed_hash: row.get(21).unwrap_or(None),
+                clean_content: row.get(22).unwrap_or(None),
+                category: row.get(23).unwrap_or(None),
+            })
+        })?;
+        Ok((rows.collect::<Result<Vec<_>, _>>()?, total, counts))
+    }
+
+    pub fn content_position(
+        &self,
+        id: &str,
+        hide_sensitive: bool,
+    ) -> Result<Option<i64>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let target: Option<(String, String)> = conn.query_row(
+            "SELECT captured_at, id FROM captured_content WHERE id = ?1 AND is_deleted = 0 AND (?2 = 0 OR contains_sensitive(COALESCE(raw_text, '')) = 0)",
+            params![id, hide_sensitive],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?;
+        let Some((captured_at, target_id)) = target else {
+            return Ok(None);
+        };
+        let position = conn.query_row(
+            "SELECT COUNT(*) FROM captured_content WHERE is_deleted = 0 AND (?1 = 0 OR contains_sensitive(COALESCE(raw_text, '')) = 0) AND (captured_at > ?2 OR (captured_at = ?2 AND id > ?3))",
+            params![hide_sensitive, captured_at, target_id],
+            |row| row.get(0),
+        )?;
+        Ok(Some(position))
+    }
+
     /// Search content by keyword across raw_text, source_url, source_app, and user_note.
     pub fn search_content(
         &self,
         query: &str,
         limit: i64,
+        hide_sensitive: bool,
     ) -> Result<Vec<CapturedContent>, Box<dyn std::error::Error>> {
         let conn = self
             .db
@@ -135,11 +279,12 @@ impl Repository {
             "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content, category
              FROM captured_content
              WHERE is_deleted = 0
+               AND (?3 = 0 OR contains_sensitive(COALESCE(raw_text, '')) = 0)
                AND (raw_text LIKE ?1 OR source_url LIKE ?1 OR source_app LIKE ?1 OR user_note LIKE ?1)
-             ORDER BY captured_at DESC LIMIT ?2"
+             ORDER BY captured_at DESC, id DESC LIMIT ?2"
         )?;
 
-        let rows = stmt.query_map(params![pattern, limit], |row| {
+        let rows = stmt.query_map(params![pattern, limit, hide_sensitive], |row| {
             Ok(CapturedContent {
                 id: row.get(0)?,
                 content_type: ContentType::from_str(&row.get::<_, String>(1)?),
@@ -994,10 +1139,7 @@ impl Repository {
 
     // ========== App Settings ==========
 
-    fn get_setting_from_db(
-        &self,
-        key: &str,
-    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    fn get_setting_from_db(&self, key: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
         let conn = self
             .db
             .conn
@@ -1013,11 +1155,7 @@ impl Repository {
         }
     }
 
-    fn update_setting_db(
-        &self,
-        key: &str,
-        value: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn update_setting_db(&self, key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self
             .db
             .conn
@@ -1074,9 +1212,7 @@ impl Repository {
     }
 
     /// Get all settings as key-value pairs.
-    pub fn get_all_settings(
-        &self,
-    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    pub fn get_all_settings(&self) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
         let conn = self
             .db
             .conn
@@ -2916,6 +3052,63 @@ mod tests {
     }
 
     #[test]
+    fn filtered_pagination_is_stable_across_three_hundred_items() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        for index in 0..300 {
+            let mut content = make_content(&format!("item-{index:03}"), "2026-07-01T12:00:00Z");
+            content.content_type = match index % 3 {
+                0 => ContentType::Text,
+                1 => ContentType::Image,
+                _ => ContentType::Url,
+            };
+            if index % 10 == 0 {
+                content.source_app = "导入内容".to_string();
+            }
+            repo.save_content(&content).unwrap();
+        }
+
+        let (first, total, counts) = repo.query_content("image", None, false, 50, 0).unwrap();
+        let (second, _, _) = repo.query_content("image", None, false, 50, 50).unwrap();
+        assert_eq!(total, 90);
+        assert_eq!(counts["all"], 300);
+        assert_eq!(counts["document"], 30);
+        assert_eq!(first.len(), 50);
+        assert_eq!(second.len(), 40);
+        let ids: std::collections::HashSet<_> =
+            first.iter().chain(&second).map(|item| &item.id).collect();
+        assert_eq!(ids.len(), 90);
+        assert_eq!(repo.content_position("item-049", false).unwrap(), Some(250));
+    }
+
+    #[test]
+    fn query_filters_sensitive_content_and_date_before_counting() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        let normal = make_content("normal", "2026-07-10T00:00:00Z");
+        let mut sensitive = make_content("sensitive", "2026-07-11T00:00:00Z");
+        sensitive.raw_text = Some("password=mysecretpass".to_string());
+        let old = make_content("old", "2026-06-01T00:00:00Z");
+        repo.save_content(&normal).unwrap();
+        repo.save_content(&sensitive).unwrap();
+        repo.save_content(&old).unwrap();
+
+        let (items, total, counts) = repo
+            .query_content("all", Some("2026-07-01T00:00:00Z"), true, 50, 0)
+            .unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["normal"]
+        );
+        assert_eq!(total, 1);
+        assert_eq!(counts["all"], 1);
+        assert_eq!(repo.content_position("sensitive", true).unwrap(), None);
+    }
+
+    #[test]
     fn save_lint_result_updates_one_open_record_and_resolves_duplicates() {
         let db = test_db();
         {
@@ -3498,8 +3691,7 @@ mod tests {
         let repo = Repository::new(db);
         let key = "ai_api_key_test_update";
 
-        repo.update_setting(key, "sk-test-secret")
-            .unwrap();
+        repo.update_setting(key, "sk-test-secret").unwrap();
 
         let stored = repo.get_setting_from_db(key).unwrap().unwrap();
         assert!(crate::secure_store::is_encrypted_value(&stored));
@@ -3542,10 +3734,7 @@ mod tests {
             repo.get_setting(key).unwrap(),
             Some("sk-test-secret".to_string())
         );
-        assert_eq!(
-            repo.get_setting_from_db(key).unwrap(),
-            Some(stored_before)
-        );
+        assert_eq!(repo.get_setting_from_db(key).unwrap(), Some(stored_before));
     }
 
     #[test]
@@ -3565,10 +3754,7 @@ mod tests {
             repo.get_setting_from_db("ai_api_key_openai").unwrap(),
             Some("sk-legacy-secret".to_string())
         );
-        assert_eq!(
-            settings.get("ai_provider"),
-            Some(&"openai".to_string())
-        );
+        assert_eq!(settings.get("ai_provider"), Some(&"openai".to_string()));
     }
 
     #[test]

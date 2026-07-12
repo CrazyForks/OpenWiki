@@ -5,6 +5,7 @@ export interface StorageInfo {
   total_items: number;
   disk_usage_mb: number;
 }
+export interface ContentPage { items: CapturedContent[]; total: number; counts: Record<string, number>; }
 
 export interface MarkdownImportEntry {
   file_name: string;
@@ -62,6 +63,13 @@ export async function getAllContent(
   offset?: number
 ): Promise<CapturedContent[]> {
   return invoke("get_all_content", { limit, offset });
+}
+export async function queryContent(filter: string, startAt: string | null, hideSensitive: boolean, limit: number, offset: number): Promise<ContentPage> {
+  return invoke("query_content", { filter, startAt, hideSensitive, limit, offset });
+}
+
+export async function getContentPosition(id: string, hideSensitive: boolean): Promise<number | null> {
+  return invoke("get_content_position", { id, hideSensitive });
 }
 
 export async function getStorageInfo(): Promise<StorageInfo> {

@@ -11,7 +11,8 @@ import { useTranslation } from "react-i18next";
 import { CheckCircle2, FileText, FolderOpen, Image as ImageIcon, Import, Link2, LoaderCircle, Upload, XCircle } from "lucide-react";
 import { useContentStore } from "../../stores/contentStore";
 import {
-  getAllContent,
+  queryContent,
+  getContentPosition,
   getStorageInfo,
   getContentsByIds,
   importContentFiles,
@@ -22,7 +23,7 @@ import {
   type UrlImportProgressEvent,
 } from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
-import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { ContentCard } from "./ContentCard";
 import type { ContentType } from "../../types/content";
 
@@ -63,7 +64,6 @@ const IMPORT_ACCEPT = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ].join(",");
 
-const IMPORT_SOURCE_APPS = new Set(["Markdown 导入", "导入内容"]);
 const SUPPORTED_IMPORT_FORMATS = ["Markdown", "TXT", "PNG", "JPG", "WebP", "GIF", "PDF", "DOCX", "PPTX"];
 const FUTURE_IMPORT_FORMATS = ["DOC", "PPT"];
 const LONG_IMPORT_NOTICE_MS = 8000;
@@ -72,9 +72,6 @@ const LONG_IMPORT_NOTICE_MS = 8000;
 const IMPORT_BATCH_SIZE = 20;
 const URL_IMPORT_SAMPLE_LIMIT = 4;
 const BOOKMARK_IMPORT_ACCEPT = ".html,.htm,text/html";
-
-const isImportedDocument = (content: { source_app: string }) =>
-  IMPORT_SOURCE_APPS.has(content.source_app);
 
 const getImportKind = (file: File): ContentImportKind | null => {
   const name = file.name.toLowerCase();
@@ -154,7 +151,6 @@ export function ContentList() {
   const { t } = useTranslation("content");
   const { contents, isLoading, setContents, setIsLoading } = useContentStore();
   const hasMore = useContentStore((s) => s.hasMore);
-  const totalCount = useContentStore((s) => s.totalCount);
   const isLoadingMore = useContentStore((s) => s.isLoadingMore);
   const setHasMore = useContentStore((s) => s.setHasMore);
   const setTotalCount = useContentStore((s) => s.setTotalCount);
@@ -170,6 +166,7 @@ export function ContentList() {
   const setStorageInfo = useSettingsStore((s) => s.setStorageInfo);
   const [filter, setFilter] = useState<ContentFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({ all: 0 });
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
   const [importMessage, setImportMessage] = useState("");
@@ -185,27 +182,40 @@ export function ContentList() {
   const importPanelRef = useRef<HTMLDivElement>(null);
   const activeUrlImportJobRef = useRef<string | null>(null);
   const urlImportStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSequenceRef = useRef(0);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Load initial page (first 50 items)
+  const startAt = useMemo(() => {
+    if (dateRange === "all") return null;
+    const cutoff = new Date();
+    if (dateRange === "today") cutoff.setHours(0, 0, 0, 0);
+    else cutoff.setDate(cutoff.getDate() - (dateRange === "week" ? 7 : 15));
+    return cutoff.toISOString();
+  }, [dateRange]);
+
   const loadInitial = useCallback(async () => {
+    const sequence = ++requestSequenceRef.current;
     setIsLoading(true);
     try {
-      const info = await getStorageInfo();
+      const [info, page] = await Promise.all([
+        getStorageInfo(),
+        queryContent(filter, startAt, sensitiveFilterEnabled, PAGE_SIZE, 0),
+      ]);
+      if (sequence !== requestSequenceRef.current) return;
       setStorageInfo(info.total_items, info.disk_usage_mb);
-      setTotalCount(info.total_items);
-      const data = await getAllContent(PAGE_SIZE, 0);
-      setContents(data);
-      setHasMore(data.length < info.total_items);
+      setTotalCount(page.total);
+      setTypeCounts(page.counts);
+      setContents(page.items);
+      setHasMore(page.items.length < page.total);
     } catch (e) {
       console.error("Failed to load content:", e);
     } finally {
       setIsLoading(false);
     }
-  }, [setContents, setIsLoading, setStorageInfo, setTotalCount, setHasMore]);
+  }, [filter, startAt, sensitiveFilterEnabled, setContents, setIsLoading, setStorageInfo, setTotalCount, setHasMore]);
 
   // Load more items (append next batch)
   const loadMore = useCallback(async () => {
@@ -213,15 +223,17 @@ export function ContentList() {
     setIsLoadingMore(true);
     try {
       const offset = contents.length;
-      const data = await getAllContent(PAGE_SIZE, offset);
-      appendContents(data);
-      if (data.length < PAGE_SIZE) setHasMore(false);
+      const page = await queryContent(filter, startAt, sensitiveFilterEnabled, PAGE_SIZE, offset);
+      appendContents(page.items);
+      setTotalCount(page.total);
+      setTypeCounts(page.counts);
+      if (offset + page.items.length >= page.total) setHasMore(false);
     } catch (e) {
       console.error("Failed to load more:", e);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [contents.length, isLoadingMore, hasMore, appendContents, setIsLoadingMore, setHasMore]);
+  }, [contents.length, isLoadingMore, hasMore, filter, startAt, sensitiveFilterEnabled, appendContents, setIsLoadingMore, setHasMore, setTotalCount]);
 
   useEffect(() => {
     loadInitial();
@@ -559,11 +571,30 @@ export function ContentList() {
         }, 1200);
         return;
       }
-      loadInitial();
+      const container = scrollContainerRef.current;
+      const anchor = contents.find((item) => {
+        const rect = cardRefs.current[item.id]?.getBoundingClientRect();
+        return rect && container && rect.bottom > container.getBoundingClientRect().top;
+      });
+      const beforeTop = anchor ? cardRefs.current[anchor.id]?.getBoundingClientRect().top : null;
+      const sequence = ++requestSequenceRef.current;
+      queryContent(filter, startAt, sensitiveFilterEnabled, Math.min(Math.max(contents.length, PAGE_SIZE), 500), 0)
+        .then((page) => {
+          if (sequence !== requestSequenceRef.current) return;
+          setContents(page.items); setTotalCount(page.total); setTypeCounts(page.counts);
+          setHasMore(page.items.length < page.total);
+          requestAnimationFrame(() => {
+            if (anchor && beforeTop != null && container) {
+              const afterTop = cardRefs.current[anchor.id]?.getBoundingClientRect().top;
+              if (afterTop != null) container.scrollTop += afterTop - beforeTop;
+            }
+          });
+        })
+        .catch((error) => console.error("Failed to refresh content:", error));
     };
     window.addEventListener("focus", handleFocus);
     return () => { window.removeEventListener("focus", handleFocus); };
-  }, [loadInitial]);
+  }, [contents, filter, startAt, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore]);
 
   // Scroll listener: trigger loadMore when near bottom of scroll container
   useEffect(() => {
@@ -577,6 +608,11 @@ export function ContentList() {
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
   }, [hasMore, loadMore]);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (el && hasMore && !isLoadingMore && el.scrollHeight <= el.clientHeight + 1) loadMore();
+  }, [contents.length, hasMore, isLoadingMore, loadMore]);
 
   // Listen for content updates — reload single item instead of full list
   const reloadSingleItem = useCallback(async (id: string) => {
@@ -625,20 +661,28 @@ export function ContentList() {
   useEffect(() => {
     if (!scrollToId) return;
 
-    // Reset filters to "all" so the target item is visible
-    setFilter("all");
-
-    // Wait for render, then scroll to the item
-    const timer = setTimeout(() => {
-      const el = cardRefs.current[scrollToId];
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        setScrollToId(null);
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [scrollToId, setScrollToId, contents]);
+    if (filter !== "all" || dateRange !== "all") {
+      setFilter("all");
+      setDateRange("all");
+      return;
+    }
+    const target = scrollToId;
+    const sequence = ++requestSequenceRef.current;
+    getContentPosition(target, sensitiveFilterEnabled)
+      .then(async (position) => {
+        if (position == null) return null;
+        const limit = (Math.floor(position / PAGE_SIZE) + 1) * PAGE_SIZE;
+        return queryContent("all", null, sensitiveFilterEnabled, limit, 0);
+      })
+      .then((page) => {
+        if (!page || sequence !== requestSequenceRef.current) return;
+        setContents(page.items); setTotalCount(page.total); setTypeCounts(page.counts);
+        setHasMore(page.items.length < page.total);
+        setTimeout(() => cardRefs.current[target]?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+      })
+      .catch((error) => console.error("Failed to locate search result:", error))
+      .finally(() => setScrollToId(null));
+  }, [scrollToId, filter, dateRange, setScrollToId, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore]);
 
   // Auto-clear highlights after 4 seconds
   useEffect(() => {
@@ -648,43 +692,6 @@ export function ContentList() {
     }, 4000);
     return () => clearTimeout(timer);
   }, [highlightedIds, clearHighlights]);
-
-  const filteredContents = useMemo(() => {
-    let result = contents;
-    if (sensitiveFilterEnabled) {
-      result = result.filter((c) => !c.raw_text || !containsSensitiveData(c.raw_text));
-    }
-    if (filter === "document") {
-      result = result.filter(isImportedDocument);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.content_type === filter && !isImportedDocument(c));
-    }
-    if (dateRange !== "all") {
-      const now = new Date();
-      const cutoff = new Date();
-      if (dateRange === "today") {
-        cutoff.setHours(0, 0, 0, 0);
-      } else if (dateRange === "week") {
-        cutoff.setDate(now.getDate() - 7);
-      } else if (dateRange === "half-month") {
-        cutoff.setDate(now.getDate() - 15);
-      }
-      result = result.filter((c) => new Date(c.captured_at) >= cutoff);
-    }
-    return result;
-  }, [contents, filter, sensitiveFilterEnabled, dateRange]);
-
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: totalCount };
-    for (const c of contents) {
-      if (isImportedDocument(c)) {
-        counts.document = (counts.document || 0) + 1;
-      } else {
-        counts[c.content_type] = (counts[c.content_type] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [contents, totalCount]);
 
   const isImportBusy = importStatus === "picking" || importStatus === "reading" || importStatus === "converting" || importStatus === "saving";
 
@@ -910,7 +917,7 @@ export function ContentList() {
     );
   }
 
-  if (contents.length === 0) {
+  if (contents.length === 0 && filter === "all" && dateRange === "all" && typeCounts.all === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-80">
         {renderImportNotice()}
@@ -1124,7 +1131,7 @@ export function ContentList() {
       )}
 
       {/* Content cards */}
-      {filteredContents.length === 0 ? (
+      {contents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <span className="text-3xl mb-3">🔍</span>
           <p className="text-sm text-gray-500 dark:text-slate-400">
@@ -1133,7 +1140,7 @@ export function ContentList() {
         </div>
       ) : (
         <div className="space-y-2.5">
-          {filteredContents.map((content) => (
+          {contents.map((content) => (
             <ContentCard
               key={content.id}
               content={content}

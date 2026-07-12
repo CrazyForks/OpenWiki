@@ -51,6 +51,17 @@ impl Database {
                 Ok(cjk_segment(&input))
             },
         )?;
+        conn.create_scalar_function(
+            "contains_sensitive",
+            1,
+            FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_UTF8,
+            |ctx| {
+                let input: String = ctx.get(0).unwrap_or_default();
+                Ok(crate::capture::sensitive_filter::contains_sensitive_data(
+                    &input,
+                ))
+            },
+        )?;
         Ok(())
     }
 

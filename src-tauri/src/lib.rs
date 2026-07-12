@@ -226,6 +226,8 @@ pub fn run() {
             commands::capture::get_contents_by_ids,
             commands::capture::test_ai_connection,
             commands::storage::get_all_content,
+            commands::storage::query_content,
+            commands::storage::get_content_position,
             commands::storage::delete_content,
             commands::report::generate_report,
             commands::report::get_report,
