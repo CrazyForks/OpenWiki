@@ -25,6 +25,8 @@ import {
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ContentCard } from "./ContentCard";
+import { getContentWikiPagesBatch } from "../../services/wikiService";
+import type { WikiPage } from "../../types/wiki";
 import type { ContentType } from "../../types/content";
 
 type FilterType = "all" | ContentType;
@@ -167,6 +169,7 @@ export function ContentList() {
   const [filter, setFilter] = useState<ContentFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({ all: 0 });
+  const [wikiPagesByContent, setWikiPagesByContent] = useState<Record<string, WikiPage[]>>({});
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
   const [importMessage, setImportMessage] = useState("");
@@ -238,6 +241,16 @@ export function ContentList() {
   useEffect(() => {
     loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    if (contents.length === 0) {
+      setWikiPagesByContent({});
+      return;
+    }
+    getContentWikiPagesBatch(contents.map((content) => content.id))
+      .then(setWikiPagesByContent)
+      .catch(() => setWikiPagesByContent({}));
+  }, [contents]);
 
   const openImportPanel = useCallback(() => {
     setIsImportPanelOpen((open) => !open);
@@ -1145,6 +1158,7 @@ export function ContentList() {
               key={content.id}
               content={content}
               isHighlighted={highlightedIds.includes(content.id)}
+              initialWikiPages={wikiPagesByContent[content.id] ?? []}
               ref={(el) => { cardRefs.current[content.id] = el; }}
             />
           ))}

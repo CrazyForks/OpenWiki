@@ -1013,7 +1013,10 @@ fn run_local_wiki_lint(repo: &Repository) -> Result<Vec<WikiLintResult>, String>
             continue;
         };
         let page_ids: Vec<String> = serde_json::from_str(&lint.page_ids).unwrap_or_default();
-        if !page_ids.iter().any(|page_id| current_page_ids.contains(page_id.as_str())) {
+        if !page_ids
+            .iter()
+            .any(|page_id| current_page_ids.contains(page_id.as_str()))
+        {
             repo.resolve_lint_result(lint.id)
                 .map_err(|e| e.to_string())?;
         }
@@ -1120,6 +1123,33 @@ pub fn get_content_wiki_pages(
         }
     }
     Ok(pages)
+}
+
+#[tauri::command]
+pub fn get_content_wiki_pages_batch(
+    state: State<'_, AppState>,
+    content_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, Vec<WikiPage>>, String> {
+    let repo = Repository::new(state.db.clone());
+    let mut result = std::collections::HashMap::new();
+    for content_id in content_ids {
+        let mut pages = Vec::new();
+        for source in repo
+            .get_pages_for_content(&content_id)
+            .map_err(|e| e.to_string())?
+        {
+            if let Some(page) = repo
+                .get_wiki_page_by_id(&source.page_id)
+                .map_err(|e| e.to_string())?
+            {
+                if page.status == "active" || page.status == "needs_recompile" {
+                    pages.push(page);
+                }
+            }
+        }
+        result.insert(content_id, pages);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

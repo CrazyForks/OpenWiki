@@ -209,6 +209,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::capture::save_captured_content,
+            commands::capture::write_clipboard_text,
             commands::capture::save_spotlight_content,
             commands::capture::import_markdown_files,
             commands::capture::import_content_files,
@@ -287,6 +288,7 @@ pub fn run() {
             commands::wiki::wiki_lint_recompile,
             commands::wiki::get_page_sources,
             commands::wiki::get_content_wiki_pages,
+            commands::wiki::get_content_wiki_pages_batch,
             update::check_for_update_manual,
             update::set_update_check_enabled,
             update::get_update_settings,

@@ -437,12 +437,7 @@ pub async fn copy_content_summary(state: State<'_, AppState>) -> Result<(), Stri
         lines.join("\n")
     };
 
-    // Write to clipboard directly via arboard
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("Cannot access clipboard: {}", e))?;
-    clipboard
-        .set_text(&text)
-        .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
+    crate::capture::clipboard::write_text_suppressed(&text)?;
 
     Ok(())
 }

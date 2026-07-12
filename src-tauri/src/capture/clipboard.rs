@@ -1,10 +1,46 @@
+use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::time::Duration;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
+
+static SELF_WRITTEN_TEXT: Lazy<Mutex<Option<(String, Instant)>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn write_text_suppressed(text: &str) -> Result<(), String> {
+    let hash = compute_text_hash(text);
+    *SELF_WRITTEN_TEXT.lock().map_err(|e| e.to_string())? = Some((hash, Instant::now()));
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("Cannot access clipboard: {}", e))?;
+    if let Err(error) = clipboard.set_text(text) {
+        *SELF_WRITTEN_TEXT.lock().map_err(|e| e.to_string())? = None;
+        return Err(format!("Failed to write to clipboard: {}", error));
+    }
+    Ok(())
+}
+
+fn consume_self_written(hash: &str) -> bool {
+    let Ok(mut entry) = SELF_WRITTEN_TEXT.lock() else {
+        return false;
+    };
+    let matches = entry
+        .as_ref()
+        .map(|(saved, at)| saved == hash && at.elapsed() < Duration::from_secs(3))
+        .unwrap_or(false);
+    if matches
+        || entry
+            .as_ref()
+            .map(|(_, at)| at.elapsed() >= Duration::from_secs(3))
+            .unwrap_or(false)
+    {
+        *entry = None;
+    }
+    matches
+}
 
 /// Save arboard::ImageData (raw RGBA pixels) to a PNG file on disk.
 /// Returns the file path if successful.
@@ -138,6 +174,11 @@ impl ClipboardWatcher {
                     else if let Ok(text) = clipboard.get_text() {
                         if !text.is_empty() {
                             let hash = compute_text_hash(&text);
+                            if consume_self_written(&hash) {
+                                last_content_hash = Some(hash);
+                                std::thread::sleep(Duration::from_millis(interval));
+                                continue;
+                            }
 
                             let is_new = match &last_content_hash {
                                 Some(prev) => prev != &hash,

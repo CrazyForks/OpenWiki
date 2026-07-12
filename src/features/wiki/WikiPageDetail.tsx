@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { WikiPage, WikiPageSource } from "../../types/wiki";
 import type { CapturedContent } from "../../types/content";
 import { getPageSources } from "../../services/wikiService";
-import { invoke } from "@tauri-apps/api/core";
+import { getContentsByIds } from "../../services/storageService";
 
 const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>> = {
   concept: BookOpen,
@@ -54,19 +54,9 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
     setLoadingSources(true);
     try {
       const pageSources = await getPageSources(page.id);
-      // Fetch content details for each source
-      const enriched = await Promise.all(
-        pageSources.map(async (src) => {
-          try {
-            const content = await invoke<CapturedContent | null>("get_contents_by_ids", {
-              ids: [src.content_id],
-            });
-            return { ...src, content: Array.isArray(content) ? content[0] : undefined };
-          } catch {
-            return { ...src, content: undefined };
-          }
-        })
-      );
+      const contents = await getContentsByIds(pageSources.map((source) => source.content_id));
+      const byId = new Map(contents.map((content) => [content.id, content]));
+      const enriched = pageSources.map((source) => ({ ...source, content: byId.get(source.content_id) }));
       setSources(enriched);
     } catch (e) {
       console.error("Failed to load sources:", e);

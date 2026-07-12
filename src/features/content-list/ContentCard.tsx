@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,7 @@ import type { WikiPage } from "../../types/wiki";
 interface ContentCardProps {
   content: CapturedContent;
   isHighlighted?: boolean;
+  initialWikiPages?: WikiPage[];
 }
 
 const URL_RETRY_TIMEOUT_MS = 120_000;
@@ -41,7 +42,7 @@ function formatRelativeTime(dateStr: string, t: TFunction): string {
 }
 
 export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
-  function ContentCard({ content, isHighlighted = false }, ref) {
+  function ContentCard({ content, isHighlighted = false, initialWikiPages }, ref) {
   const { t } = useTranslation("content");
   const removeContent = useContentStore((s) => s.removeContent);
   const removeFromDataHub = useDataHubStore((s) => s.removeContent);
@@ -53,15 +54,17 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const [ocrText] = useState<string | null>(null);
   const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done" | "error">("idle");
   const [wikiError, setWikiError] = useState<string | null>(null);
-  const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
+  const [localWikiPages, setLocalWikiPages] = useState<WikiPage[] | null>(null);
+  const linkedWikiPages = localWikiPages ?? initialWikiPages ?? [];
   const [renderedAt] = useState(() => Date.now());
 
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load linked wiki pages on mount
   useEffect(() => {
-    getContentWikiPages(content.id).then(setLinkedWikiPages).catch(() => {});
-  }, [content.id]);
+    if (initialWikiPages !== undefined) return;
+    getContentWikiPages(content.id).then(setLocalWikiPages).catch(() => {});
+  }, [content.id, initialWikiPages]);
 
   const handleWikiCompile = async () => {
     if (wikiState === "compiling") return;
@@ -72,7 +75,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       setWikiState("done");
       // Refresh linked pages
       const pages = await getContentWikiPages(content.id);
-      setLinkedWikiPages(pages);
+      setLocalWikiPages(pages);
       setTimeout(() => setWikiState("idle"), 2000);
     } catch (e) {
       console.error("Wiki compile failed:", e);
@@ -106,7 +109,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
     const textToCopy = content.clean_content || content.raw_text;
     if (!textToCopy) return;
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      await invoke("write_clipboard_text", { text: textToCopy });
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
