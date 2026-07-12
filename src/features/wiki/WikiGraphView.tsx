@@ -72,20 +72,19 @@ function useResolvedDarkTheme() {
   return theme === "dark" || (theme === "system" && systemDark);
 }
 
-function WikiGraphViewInner() {
+function WikiGraphViewInner({ active }: { active: boolean }) {
   const { t } = useTranslation("wiki");
   const { graphData, isLoadingGraph, loadGraph, selectedPage, selectPage, clearSelection, deletePage } = useWikiStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<ReturnType<typeof forceSimulation<GNode, GLink>> | null>(null);
-  const rafRef = useRef<number>(0);
-  const tickRef = useRef<() => void>(() => {});
   const nodesRef = useRef<GNode[]>([]);
   const linksRef = useRef<GLink[]>([]);
   const camRef = useRef({ x: 0, y: 0, zoom: 1 });
   const dragRef = useRef<{ node: GNode | null; startX: number; startY: number; moved: boolean }>({ node: null, startX: 0, startY: 0, moved: false });
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 });
   const hoverRef = useRef<GNode | null>(null);
+  const activeRef = useRef(active);
   const isDark = useResolvedDarkTheme();
   const isDarkRef = useRef(isDark);
 
@@ -116,6 +115,7 @@ function WikiGraphViewInner() {
   }, [getNodeRadius]);
 
   const draw = useCallback(() => {
+    if (!activeRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -197,15 +197,6 @@ function WikiGraphViewInner() {
     draw();
   }, [draw, isDark]);
 
-  const tick = useCallback(() => {
-    draw();
-    rafRef.current = requestAnimationFrame(tickRef.current);
-  }, [draw]);
-
-  useEffect(() => {
-    tickRef.current = tick;
-  }, [tick]);
-
   // Setup simulation
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0) return;
@@ -229,14 +220,32 @@ function WikiGraphViewInner() {
       .force("y", forceY<GNode>(0).strength(0.02))
       .alphaDecay(0.028)
       .velocityDecay(0.4)
-      .alpha(1);
+      .alpha(1)
+      .on("tick", () => draw())
+      .on("end", () => draw());
 
     simRef.current = sim;
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(tick);
+    draw();
+    if (!activeRef.current) sim.stop();
 
-    return () => { sim.stop(); cancelAnimationFrame(rafRef.current); };
-  }, [graphData, tick]);
+    return () => {
+      sim.stop();
+    };
+  }, [draw, graphData]);
+
+  useEffect(() => {
+    activeRef.current = active;
+    const simulation = simRef.current;
+    if (!active) {
+      simulation?.stop();
+      return;
+    }
+
+    draw();
+    if (simulation && simulation.alpha() > simulation.alphaMin()) {
+      simulation.restart();
+    }
+  }, [active, draw]);
 
   // Resize canvas
   useEffect(() => {
@@ -250,12 +259,13 @@ function WikiGraphViewInner() {
       canvas.height = h * dpr;
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
+      draw();
     };
     resize();
     const obs = new ResizeObserver(resize);
     obs.observe(container);
     return () => obs.disconnect();
-  }, []);
+  }, [draw]);
 
   // Pointer events
   useEffect(() => {
@@ -289,10 +299,12 @@ function WikiGraphViewInner() {
         cam.y += (e.clientY - panRef.current.lastY) / cam.zoom;
         panRef.current.lastX = e.clientX;
         panRef.current.lastY = e.clientY;
+        draw();
       } else {
         const g = screenToGraph(e.clientX, e.clientY, canvas);
         hoverRef.current = findNode(g.x, g.y);
         canvas.style.cursor = hoverRef.current ? "pointer" : "grab";
+        draw();
       }
     };
 
@@ -312,6 +324,7 @@ function WikiGraphViewInner() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       camRef.current.zoom = Math.max(0.1, Math.min(10, camRef.current.zoom * (e.deltaY > 0 ? 0.97 : 1.03)));
+      draw();
     };
 
     canvas.addEventListener("pointerdown", onDown);
@@ -324,7 +337,7 @@ function WikiGraphViewInner() {
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [screenToGraph, findNode, selectPage]);
+  }, [screenToGraph, findNode, selectPage, draw]);
 
   return (
     <div ref={containerRef} className="relative rounded-xl overflow-hidden" style={{
@@ -364,11 +377,11 @@ function WikiGraphViewInner() {
 }
 
 const _WikiGraphViewInner = WikiGraphViewInner;
-export function WikiGraphView() {
+export function WikiGraphView({ active = true }: { active?: boolean }) {
   const { t } = useTranslation("wiki");
   return (
     <GraphErrorBoundary errorText={t("graph.error")} retryText={t("graph.retry")}>
-      <_WikiGraphViewInner />
+      <_WikiGraphViewInner active={active} />
     </GraphErrorBoundary>
   );
 }
