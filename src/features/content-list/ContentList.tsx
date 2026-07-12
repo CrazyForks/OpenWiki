@@ -4,6 +4,7 @@ import {
   useState,
   useMemo,
   useRef,
+  startTransition,
   type ChangeEvent,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -41,6 +42,69 @@ const FILTER_TABS: { value: ContentFilter; labelKey: string; icon: string }[] = 
   { value: "url", labelKey: "filter.url", icon: "🔗" },
   { value: "document", labelKey: "filter.document", icon: "📥" },
 ];
+
+const EMPTY_WIKI_PAGES: WikiPage[] = [];
+
+interface ContentFilterTabsProps {
+  filter: ContentFilter;
+  counts: Record<string, number>;
+  isRefreshing: boolean;
+  onSelect: (filter: ContentFilter) => void;
+}
+
+function ContentFilterTabs({ filter, counts, isRefreshing, onSelect }: ContentFilterTabsProps) {
+  const { t } = useTranslation("content");
+  const [activeFilter, setActiveFilter] = useState(filter);
+
+  useEffect(() => {
+    setActiveFilter(filter);
+  }, [filter]);
+
+  return (
+    <div className="relative flex items-center gap-1 p-0.5 rounded-xl glass" aria-busy={isRefreshing}>
+      {FILTER_TABS.map((tab) => {
+        const count = counts[tab.value] || 0;
+        if (tab.value !== "all" && count === 0) return null;
+        const isActive = activeFilter === tab.value;
+        return (
+          <button
+            key={tab.value}
+            onClick={() => {
+              setActiveFilter(tab.value);
+              onSelect(tab.value);
+            }}
+            className={`
+              flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors duration-150
+              ${isActive
+                ? "bg-white/80 dark:bg-white/[0.1] text-orange-600 dark:text-orange-400 shadow-sm"
+                : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
+              }
+            `}
+          >
+            <span className="text-sm">{tab.icon}</span>
+            <span>{t(tab.labelKey)}</span>
+            <span className={`
+              ml-0.5 px-1.5 py-0.5 rounded-full text-[10px]
+              ${isActive
+                ? "bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400"
+                : "bg-gray-200/50 dark:bg-white/[0.06] text-gray-400 dark:text-slate-500"
+              }
+            `}>
+              {count}
+            </span>
+          </button>
+        );
+      })}
+      {isRefreshing && (
+        <LoaderCircle
+          size={12}
+          className="absolute -right-4 animate-spin text-orange-500"
+          aria-label={t("loading")}
+        />
+      )}
+    </div>
+  );
+}
 
 const IMPORT_ACCEPT = [
   ".md",
@@ -187,11 +251,23 @@ export function ContentList() {
   const activeUrlImportJobRef = useRef<string | null>(null);
   const urlImportStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSequenceRef = useRef(0);
+  const storageRequestSequenceRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const hasLoadedOnceRef = useRef(false);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const cardRefCallbacks = useRef<Record<string, (element: HTMLDivElement | null) => void>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const getCardRef = useCallback((id: string) => {
+    if (!cardRefCallbacks.current[id]) {
+      cardRefCallbacks.current[id] = (element) => {
+        cardRefs.current[id] = element;
+      };
+    }
+    return cardRefCallbacks.current[id];
+  }, []);
 
   const startAt = useMemo(() => {
     if (dateRange === "all") return null;
@@ -203,6 +279,7 @@ export function ContentList() {
 
   const beginRefreshRequest = useCallback(() => {
     const sequence = ++requestSequenceRef.current;
+    refreshInFlightRef.current = true;
     if (hasLoadedOnceRef.current) {
       setIsRefreshing(true);
     } else {
@@ -213,19 +290,27 @@ export function ContentList() {
 
   const finishRefreshRequest = useCallback((sequence: number) => {
     if (sequence !== requestSequenceRef.current) return;
+    refreshInFlightRef.current = false;
     setIsLoading(false);
     setIsRefreshing(false);
   }, [setIsLoading]);
 
+  const refreshStorageInfo = useCallback(async () => {
+    const sequence = ++storageRequestSequenceRef.current;
+    try {
+      const info = await getStorageInfo();
+      if (sequence !== storageRequestSequenceRef.current) return;
+      setStorageInfo(info.total_items, info.disk_usage_mb);
+    } catch (error) {
+      console.error("Failed to load storage info:", error);
+    }
+  }, [setStorageInfo]);
+
   const loadInitial = useCallback(async () => {
     const sequence = beginRefreshRequest();
     try {
-      const [info, page] = await Promise.all([
-        getStorageInfo(),
-        queryContent(filter, startAt, sensitiveFilterEnabled, PAGE_SIZE, 0),
-      ]);
+      const page = await queryContent(filter, startAt, sensitiveFilterEnabled, PAGE_SIZE, 0);
       if (sequence !== requestSequenceRef.current) return;
-      setStorageInfo(info.total_items, info.disk_usage_mb);
       setTotalCount(page.total);
       setTypeCounts(page.counts);
       setContents(page.items);
@@ -236,15 +321,17 @@ export function ContentList() {
     } finally {
       finishRefreshRequest(sequence);
     }
-  }, [filter, startAt, sensitiveFilterEnabled, setContents, setStorageInfo, setTotalCount, setHasMore, beginRefreshRequest, finishRefreshRequest]);
+  }, [filter, startAt, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore, beginRefreshRequest, finishRefreshRequest]);
 
   // Load more items (append next batch)
   const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore) return;
+    if (refreshInFlightRef.current || isLoadingMore || !hasMore) return;
+    const sequence = requestSequenceRef.current;
     setIsLoadingMore(true);
     try {
       const offset = contents.length;
       const page = await queryContent(filter, startAt, sensitiveFilterEnabled, PAGE_SIZE, offset);
+      if (sequence !== requestSequenceRef.current) return;
       appendContents(page.items);
       setTotalCount(page.total);
       setTypeCounts(page.counts);
@@ -259,6 +346,26 @@ export function ContentList() {
   useEffect(() => {
     loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    refreshStorageInfo();
+  }, [refreshStorageInfo]);
+
+  const selectFilter = useCallback((nextFilter: ContentFilter) => {
+    startTransition(() => {
+      setFilter(nextFilter);
+    });
+  }, []);
+
+  useEffect(() => {
+    const visibleIds = new Set(contents.map((content) => content.id));
+    for (const id of Object.keys(cardRefCallbacks.current)) {
+      if (!visibleIds.has(id)) {
+        delete cardRefCallbacks.current[id];
+        delete cardRefs.current[id];
+      }
+    }
+  }, [contents]);
 
   useEffect(() => {
     if (contents.length === 0) {
@@ -417,7 +524,7 @@ export function ContentList() {
             }));
           }
 
-          await loadInitial();
+          await Promise.all([loadInitial(), refreshStorageInfo()]);
           setFilter("url");
           if (payload.imported_ids.length > 0) {
             setHighlightedIds(payload.imported_ids);
@@ -449,7 +556,7 @@ export function ContentList() {
         urlImportStatusTimerRef.current = null;
       }
     };
-  }, [loadInitial, setHighlightedIds, t]);
+  }, [loadInitial, refreshStorageInfo, setHighlightedIds, t]);
 
   const importFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {
@@ -527,7 +634,7 @@ export function ContentList() {
         allImportedIds.push(...result.imported.map((item) => item.id));
       }
 
-      await loadInitial();
+      await Promise.all([loadInitial(), refreshStorageInfo()]);
       if (allImportedIds.length > 0) {
         setHighlightedIds(allImportedIds);
       }
@@ -550,7 +657,7 @@ export function ContentList() {
       setImportMessage(t("import.failed"));
       setTimeout(() => setImportStatus("idle"), 4000);
     }
-  }, [loadInitial, setHighlightedIds, t]);
+  }, [loadInitial, refreshStorageInfo, setHighlightedIds, t]);
 
   useEffect(() => {
     const isProcessing = importStatus === "reading" || importStatus === "converting" || importStatus === "saving";
@@ -1033,45 +1140,12 @@ export function ContentList() {
       />
       {/* Header with filter tabs */}
       <div className="flex items-center justify-between px-1">
-        <div className="relative flex items-center gap-1 p-0.5 rounded-xl glass" aria-busy={isRefreshing}>
-          {FILTER_TABS.map((tab) => {
-            const count = typeCounts[tab.value] || 0;
-            if (tab.value !== "all" && count === 0) return null;
-            const isActive = filter === tab.value;
-            return (
-              <button
-                key={tab.value}
-                onClick={() => setFilter(tab.value)}
-                className={`
-                  flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all
-                  ${isActive
-                    ? "bg-white/80 dark:bg-white/[0.1] text-orange-600 dark:text-orange-400 shadow-sm"
-                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
-                  }
-                `}
-              >
-                <span className="text-sm">{tab.icon}</span>
-                <span>{t(tab.labelKey)}</span>
-                <span className={`
-                  ml-0.5 px-1.5 py-0.5 rounded-full text-[10px]
-                  ${isActive
-                    ? "bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400"
-                    : "bg-gray-200/50 dark:bg-white/[0.06] text-gray-400 dark:text-slate-500"
-                  }
-                `}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-          {isRefreshing && (
-            <LoaderCircle
-              size={12}
-              className="absolute -right-4 animate-spin text-orange-500"
-              aria-label={t("loading")}
-            />
-          )}
-        </div>
+        <ContentFilterTabs
+          filter={filter}
+          counts={typeCounts}
+          isRefreshing={isRefreshing}
+          onSelect={selectFilter}
+        />
         <div className="flex items-center gap-1.5">
           {/* Date range filters */}
           {(["all", "today", "week", "half-month"] as DateRange[]).map((range) => {
@@ -1189,8 +1263,8 @@ export function ContentList() {
               key={content.id}
               content={content}
               isHighlighted={highlightedIds.includes(content.id)}
-              initialWikiPages={wikiPagesByContent[content.id] ?? []}
-              ref={(el) => { cardRefs.current[content.id] = el; }}
+              initialWikiPages={wikiPagesByContent[content.id] ?? EMPTY_WIKI_PAGES}
+              ref={getCardRef(content.id)}
             />
           ))}
           {hasMore && isLoadingMore && (
