@@ -18,6 +18,8 @@
   Privacy first — all data stored in local SQLite database.
 </p>
 
+> **Network transparency:** URL reading can send the full URL to Jina Reader, and the Chinese UI can send foreign-language page text to Google Translate. Both are enabled by default for compatibility and can be disabled independently in Settings. Platform-specific readers may still contact the source platform or its API.
+
 <p align="center">
   <a href="https://openwiki.pages.dev">🌐 Website</a> · <a href="README.zh-CN.md">中文文档</a>
 </p>

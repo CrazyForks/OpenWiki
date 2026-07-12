@@ -86,6 +86,8 @@ export function SettingsView() {
     countdownDuration,
     sensitiveFilterEnabled,
     urlReadingEnabled,
+    useJinaReader,
+    translateForeignContent,
     radarIntervalDays,
     screenshotDir,
     totalItems,
@@ -105,6 +107,8 @@ export function SettingsView() {
     defaultAction,
     setDefaultAction,
     setUrlReadingEnabled,
+    setUseJinaReader,
+    setTranslateForeignContent,
     setRadarIntervalDays,
     loadXReaderStatus,
     oauthLoggedIn,
@@ -548,6 +552,12 @@ export function SettingsView() {
           {/* URL Reading */}
           <SettingRow label={t("capture.urlReading")} desc={t("capture.urlReadingDesc")}>
             <ToggleSwitch checked={urlReadingEnabled} onChange={setUrlReadingEnabled} color="green" />
+          </SettingRow>
+          <SettingRow label={t("capture.jinaReader")} desc={t("capture.jinaReaderDesc")}>
+            <ToggleSwitch checked={useJinaReader} onChange={setUseJinaReader} color="green" />
+          </SettingRow>
+          <SettingRow label={t("capture.translateForeign")} desc={t("capture.translateForeignDesc")}>
+            <ToggleSwitch checked={translateForeignContent} onChange={setTranslateForeignContent} color="green" />
           </SettingRow>
 
           </div>

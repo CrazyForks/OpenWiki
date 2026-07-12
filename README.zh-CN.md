@@ -18,6 +18,8 @@
   隐私优先 — 所有数据存储在本地 SQLite 数据库。
 </p>
 
+> **联网说明：** 链接读取可能把完整 URL 发送给 Jina Reader；中文界面的外文翻译可能把网页正文发送给 Google Translate。两项默认开启以保持原有体验，可在设置中分别关闭。平台专用读取器仍可能访问对应平台或 API。
+
 <p align="center">
   <a href="https://openwiki.pages.dev">🌐 官网</a>
 </p>
