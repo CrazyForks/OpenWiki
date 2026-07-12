@@ -51,7 +51,8 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const [deleteState, setDeleteState] = useState<"idle" | "confirm" | "deleting">("idle");
   const [ocrState] = useState<"idle" | "running" | "done">("idle");
   const [ocrText] = useState<string | null>(null);
-  const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done">("idle");
+  const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done" | "error">("idle");
+  const [wikiError, setWikiError] = useState<string | null>(null);
   const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
   const [renderedAt] = useState(() => Date.now());
 
@@ -65,6 +66,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const handleWikiCompile = async () => {
     if (wikiState === "compiling") return;
     setWikiState("compiling");
+    setWikiError(null);
     try {
       await compileContentToWiki(content.id);
       setWikiState("done");
@@ -74,7 +76,8 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       setTimeout(() => setWikiState("idle"), 2000);
     } catch (e) {
       console.error("Wiki compile failed:", e);
-      setWikiState("idle");
+      setWikiError(e instanceof Error ? e.message : String(e));
+      setWikiState("error");
     }
   };
 
@@ -211,6 +214,8 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
     content.content_type === "image" && content.image_path
       ? convertFileSrc(content.image_path)
       : null;
+  const wikiCompileIncomplete =
+    !content.wiki_compile_hash || content.wiki_compile_hash !== content.wiki_assessed_hash;
 
   return (
     <>
@@ -438,19 +443,22 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
                   {copied ? t("card.copied") : t("card.copy")}
                 </button>
               )}
-              {linkedWikiPages.length === 0 && (content.raw_text || content.user_note || content.source_url) && (
+              {(linkedWikiPages.length === 0 || wikiCompileIncomplete) && (content.raw_text || content.user_note || content.source_url) && (
                 <button
                   onClick={handleWikiCompile}
                   disabled={wikiState === "compiling"}
+                  title={wikiError || undefined}
                   className={`px-2 py-1 rounded-md text-[11px] transition-all
                     ${wikiState === "done"
                       ? "text-green-600 dark:text-green-400"
+                      : wikiState === "error"
+                      ? "text-red-500 dark:text-red-400 hover:bg-red-500/10"
                       : wikiState === "compiling"
                       ? "text-orange-400 dark:text-orange-500 opacity-60"
                       : "text-gray-400 dark:text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-500/10 dark:hover:bg-orange-500/15"
                     }`}
                 >
-                  {wikiState === "done" ? t("card.compiledToWiki") : wikiState === "compiling" ? t("card.compiling") : t("card.addToWiki")}
+                  {wikiState === "done" ? t("card.compiledToWiki") : wikiState === "compiling" ? t("card.compiling") : wikiState === "error" ? t("card.compileFailedRetry") : t("card.addToWiki")}
                 </button>
               )}
               <button
