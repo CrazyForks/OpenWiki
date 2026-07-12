@@ -15,6 +15,8 @@ pub struct UrlReadResult {
 
 pub struct UrlReader {
     http_client: Client,
+    use_jina: bool,
+    translate_foreign: bool,
     /// Tauri app handle, needed for the headless-WebView fallback used on
     /// JS-rendered / anti-bot pages (e.g. Zhihu). `None` outside a GUI context.
     app: Option<tauri::AppHandle>,
@@ -32,6 +34,13 @@ impl UrlReader {
         Self::build(Some(app))
     }
 
+    pub fn with_options(app: tauri::AppHandle, use_jina: bool, translate_foreign: bool) -> Self {
+        let mut reader = Self::build(Some(app));
+        reader.use_jina = use_jina;
+        reader.translate_foreign = translate_foreign;
+        reader
+    }
+
     fn build(app: Option<tauri::AppHandle>) -> Self {
         let http_client = match Client::builder()
             .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS))
@@ -43,7 +52,12 @@ impl UrlReader {
                 Client::new()
             }
         };
-        UrlReader { http_client, app }
+        UrlReader {
+            http_client,
+            app,
+            use_jina: true,
+            translate_foreign: true,
+        }
     }
 
     /// Smart fetch: pick the best method based on URL domain.
@@ -60,7 +74,7 @@ impl UrlReader {
         let is_chinese_locale = locale.starts_with("zh");
 
         // Auto-translate: only in Chinese mode, for non-Chinese content
-        let content = if is_chinese_locale && needs_translation(&clean) {
+        let content = if self.translate_foreign && is_chinese_locale && needs_translation(&clean) {
             log::info!("[Translate] Content is non-Chinese, creating bilingual version...");
             let bilingual = translate_bilingual(&self.http_client, &clean).await;
             log::info!("[Translate] Done, {} chars", bilingual.len());
@@ -71,7 +85,7 @@ impl UrlReader {
 
         // Also translate title if in Chinese mode and title needs translation
         let title = if let Some(ref t) = raw.title {
-            if is_chinese_locale && needs_translation(t) {
+            if self.translate_foreign && is_chinese_locale && needs_translation(t) {
                 let translated = translate_chunk(&self.http_client, t)
                     .await
                     .unwrap_or_else(|_| t.clone());
@@ -153,6 +167,22 @@ impl UrlReader {
         }
 
         // ── General: Jina Reader → direct HTML → headless WebView ──
+        if !self.use_jina {
+            return match self.fetch_direct_html(clean_url).await {
+                Ok(result) => Ok(result),
+                Err(html_err) => {
+                    if let Some(app) = self.app.as_ref() {
+                        fetch_via_browser(app, clean_url)
+                            .await
+                            .map_err(|browser_err| {
+                                format!("Direct: {} | Browser: {}", html_err, browser_err)
+                            })
+                    } else {
+                        Err(format!("Direct: {}", html_err))
+                    }
+                }
+            };
+        }
         log::info!("[Jina] 通用读取: {}", clean_url);
         match self.fetch_via_jina(clean_url).await {
             Ok(r) => Ok(r),
@@ -264,15 +294,17 @@ impl UrlReader {
 
         // Fallback: try Jina Reader (some JS-rendered articles need headless browser)
         log::info!("[WeChat] HTML 抓取失败, 尝试 Jina Reader");
-        if let Ok(jina_result) = self.fetch_via_jina(url).await {
-            if jina_result.content.len() >= MIN_CONTENT_LENGTH
-                && !is_wechat_antibot(&jina_result.content)
-            {
-                log::info!(
-                    "[WeChat] 成功 (Jina fallback): {} chars",
-                    jina_result.content.len()
-                );
-                return Ok(jina_result);
+        if self.use_jina {
+            if let Ok(jina_result) = self.fetch_via_jina(url).await {
+                if jina_result.content.len() >= MIN_CONTENT_LENGTH
+                    && !is_wechat_antibot(&jina_result.content)
+                {
+                    log::info!(
+                        "[WeChat] 成功 (Jina fallback): {} chars",
+                        jina_result.content.len()
+                    );
+                    return Ok(jina_result);
+                }
             }
         }
 

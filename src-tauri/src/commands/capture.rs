@@ -1610,7 +1610,20 @@ pub async fn retry_url_fetch(
                 return;
             }
         };
-        let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
+        let repo = crate::storage::repository::Repository::new(db.clone());
+        let reader = crate::capture::url_reader::UrlReader::with_options(
+            app.clone(),
+            repo.get_setting("use_jina_reader")
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some("false"),
+            repo.get_setting("translate_foreign_content")
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some("false"),
+        );
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
@@ -1845,7 +1858,20 @@ async fn queue_auto_url_fetch(
 
     tauri::async_runtime::spawn(async move {
         let _permit = permit;
-        let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
+        let repo = crate::storage::repository::Repository::new(db.clone());
+        let reader = crate::capture::url_reader::UrlReader::with_options(
+            app.clone(),
+            repo.get_setting("use_jina_reader")
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some("false"),
+            repo.get_setting("translate_foreign_content")
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some("false"),
+        );
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {

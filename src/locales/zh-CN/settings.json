@@ -51,7 +51,11 @@
     "sensitiveFilter": "敏感数据过滤",
     "sensitiveFilterDesc": "自动过滤密码、私钥、API Key 等",
     "urlReading": "链接内容读取",
-    "urlReadingDesc": "复制链接时自动获取网页正文"
+    "urlReadingDesc": "复制链接时自动获取网页正文",
+    "jinaReader": "使用 Jina Reader",
+    "jinaReaderDesc": "开启时会把完整 URL 发送给 r.jina.ai；关闭后优先直连网页并使用内置浏览器兜底",
+    "translateForeign": "自动翻译外文",
+    "translateForeignDesc": "中文界面下会把外文正文发送给 Google Translate；关闭后保留原文"
   },
   "ai": {
     "title": "AI 配置",

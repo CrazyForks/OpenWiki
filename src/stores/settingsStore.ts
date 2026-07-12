@@ -235,6 +235,8 @@ interface SettingsState {
   defaultAction: DefaultAction;
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
+  useJinaReader: boolean;
+  translateForeignContent: boolean;
   radarIntervalDays: number;
   countdownDuration: number;
   screenshotDir: string;
@@ -270,6 +272,8 @@ interface SettingsState {
   setDefaultAction: (action: DefaultAction) => void;
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
+  setUseJinaReader: (enabled: boolean) => void;
+  setTranslateForeignContent: (enabled: boolean) => void;
   setRadarIntervalDays: (days: number) => void;
   setCountdownDuration: (seconds: number) => void;
   setScreenshotDir: (dir: string) => void;
@@ -296,6 +300,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   defaultAction: "dismiss" as DefaultAction,
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
+  useJinaReader: true,
+  translateForeignContent: true,
   radarIntervalDays: 3,
   countdownDuration: 5,
   screenshotDir: DEFAULT_SCREENSHOT_DIR,
@@ -369,6 +375,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         defaultAction: (settings.default_action === "save" ? "save" : "dismiss") as DefaultAction,
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
+        useJinaReader: settings.use_jina_reader !== "false",
+        translateForeignContent: settings.translate_foreign_content !== "false",
         radarIntervalDays: parseInt(settings.radar_interval_days || "3", 10),
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
         screenshotDir:
@@ -553,6 +561,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     updateSetting("url_reading_enabled", String(enabled)).catch((e) =>
       console.error("Failed to save url_reading_enabled:", e)
     );
+  },
+  setUseJinaReader: (enabled) => {
+    set({ useJinaReader: enabled });
+    updateSetting("use_jina_reader", String(enabled)).catch((e) => console.error("Failed to save use_jina_reader:", e));
+  },
+  setTranslateForeignContent: (enabled) => {
+    set({ translateForeignContent: enabled });
+    updateSetting("translate_foreign_content", String(enabled)).catch((e) => console.error("Failed to save translate_foreign_content:", e));
   },
 
   setRadarIntervalDays: (days) => {

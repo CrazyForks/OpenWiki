@@ -51,7 +51,11 @@
     "sensitiveFilter": "Sensitive Data Filter",
     "sensitiveFilterDesc": "Auto-filter passwords, private keys, API keys, etc.",
     "urlReading": "URL Content Reading",
-    "urlReadingDesc": "Auto-fetch webpage content when copying links"
+    "urlReadingDesc": "Auto-fetch webpage content when copying links",
+    "jinaReader": "Use Jina Reader",
+    "jinaReaderDesc": "Sends the full URL to r.jina.ai when enabled; otherwise uses direct access and the built-in browser fallback",
+    "translateForeign": "Translate foreign content",
+    "translateForeignDesc": "Sends foreign-language page text to Google Translate in the Chinese UI; disable to keep the original text"
   },
   "ai": {
     "title": "AI Configuration",
