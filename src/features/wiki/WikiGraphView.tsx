@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback, Component, type ReactNode } from "react";
+import { useEffect, useRef, useCallback, useState, Component, type ReactNode } from "react";
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceX, forceY, type SimulationNodeDatum, type SimulationLinkDatum } from "d3-force";
 import { useTranslation } from "react-i18next";
 import { useWikiStore } from "../../stores/wikiStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { WikiPageDetail } from "./WikiPageDetail";
 
 class GraphErrorBoundary extends Component<{ children: ReactNode; errorText: string; retryText: string }, { error: string | null }> {
@@ -55,6 +56,22 @@ interface GLink extends SimulationLinkDatum<GNode> {
   weight: number;
 }
 
+function useResolvedDarkTheme() {
+  const theme = useSettingsStore((state) => state.theme);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return theme === "dark" || (theme === "system" && systemDark);
+}
+
 function WikiGraphViewInner() {
   const { t } = useTranslation("wiki");
   const { graphData, isLoadingGraph, loadGraph, selectedPage, selectPage, clearSelection, deletePage } = useWikiStore();
@@ -69,6 +86,8 @@ function WikiGraphViewInner() {
   const dragRef = useRef<{ node: GNode | null; startX: number; startY: number; moved: boolean }>({ node: null, startX: 0, startY: 0, moved: false });
   const panRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 });
   const hoverRef = useRef<GNode | null>(null);
+  const isDark = useResolvedDarkTheme();
+  const isDarkRef = useRef(isDark);
 
   useEffect(() => { loadGraph(); }, [loadGraph]);
 
@@ -105,7 +124,7 @@ function WikiGraphViewInner() {
     const w = canvas.width / dpr;
     const h = canvas.height / dpr;
     const cam = camRef.current;
-    const isDark = document.documentElement.classList.contains("dark");
+    const isDark = isDarkRef.current;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
@@ -172,6 +191,11 @@ function WikiGraphViewInner() {
 
     ctx.restore();
   }, [getNodeRadius]);
+
+  useEffect(() => {
+    isDarkRef.current = isDark;
+    draw();
+  }, [draw, isDark]);
 
   const tick = useCallback(() => {
     draw();
@@ -301,8 +325,6 @@ function WikiGraphViewInner() {
       canvas.removeEventListener("wheel", onWheel);
     };
   }, [screenToGraph, findNode, selectPage]);
-
-  const isDark = document.documentElement.classList.contains("dark");
 
   return (
     <div ref={containerRef} className="relative rounded-xl overflow-hidden" style={{
