@@ -168,6 +168,7 @@ export function ContentList() {
   const setStorageInfo = useSettingsStore((s) => s.setStorageInfo);
   const [filter, setFilter] = useState<ContentFilter>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({ all: 0 });
   const [wikiPagesByContent, setWikiPagesByContent] = useState<Record<string, WikiPage[]>>({});
   const [exportStatus, setExportStatus] = useState<"idle" | "confirm" | "exporting" | "done">("idle");
@@ -186,6 +187,7 @@ export function ContentList() {
   const activeUrlImportJobRef = useRef<string | null>(null);
   const urlImportStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSequenceRef = useRef(0);
+  const hasLoadedOnceRef = useRef(false);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -199,9 +201,24 @@ export function ContentList() {
     return cutoff.toISOString();
   }, [dateRange]);
 
-  const loadInitial = useCallback(async () => {
+  const beginRefreshRequest = useCallback(() => {
     const sequence = ++requestSequenceRef.current;
-    setIsLoading(true);
+    if (hasLoadedOnceRef.current) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    return sequence;
+  }, [setIsLoading]);
+
+  const finishRefreshRequest = useCallback((sequence: number) => {
+    if (sequence !== requestSequenceRef.current) return;
+    setIsLoading(false);
+    setIsRefreshing(false);
+  }, [setIsLoading]);
+
+  const loadInitial = useCallback(async () => {
+    const sequence = beginRefreshRequest();
     try {
       const [info, page] = await Promise.all([
         getStorageInfo(),
@@ -213,12 +230,13 @@ export function ContentList() {
       setTypeCounts(page.counts);
       setContents(page.items);
       setHasMore(page.items.length < page.total);
+      hasLoadedOnceRef.current = true;
     } catch (e) {
       console.error("Failed to load content:", e);
     } finally {
-      setIsLoading(false);
+      finishRefreshRequest(sequence);
     }
-  }, [filter, startAt, sensitiveFilterEnabled, setContents, setIsLoading, setStorageInfo, setTotalCount, setHasMore]);
+  }, [filter, startAt, sensitiveFilterEnabled, setContents, setStorageInfo, setTotalCount, setHasMore, beginRefreshRequest, finishRefreshRequest]);
 
   // Load more items (append next batch)
   const loadMore = useCallback(async () => {
@@ -590,12 +608,13 @@ export function ContentList() {
         return rect && container && rect.bottom > container.getBoundingClientRect().top;
       });
       const beforeTop = anchor ? cardRefs.current[anchor.id]?.getBoundingClientRect().top : null;
-      const sequence = ++requestSequenceRef.current;
+      const sequence = beginRefreshRequest();
       queryContent(filter, startAt, sensitiveFilterEnabled, Math.min(Math.max(contents.length, PAGE_SIZE), 500), 0)
         .then((page) => {
           if (sequence !== requestSequenceRef.current) return;
           setContents(page.items); setTotalCount(page.total); setTypeCounts(page.counts);
           setHasMore(page.items.length < page.total);
+          hasLoadedOnceRef.current = true;
           requestAnimationFrame(() => {
             if (anchor && beforeTop != null && container) {
               const afterTop = cardRefs.current[anchor.id]?.getBoundingClientRect().top;
@@ -603,11 +622,12 @@ export function ContentList() {
             }
           });
         })
-        .catch((error) => console.error("Failed to refresh content:", error));
+        .catch((error) => console.error("Failed to refresh content:", error))
+        .finally(() => finishRefreshRequest(sequence));
     };
     window.addEventListener("focus", handleFocus);
     return () => { window.removeEventListener("focus", handleFocus); };
-  }, [contents, filter, startAt, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore]);
+  }, [contents, filter, startAt, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore, beginRefreshRequest, finishRefreshRequest]);
 
   // Scroll listener: trigger loadMore when near bottom of scroll container
   useEffect(() => {
@@ -680,7 +700,7 @@ export function ContentList() {
       return;
     }
     const target = scrollToId;
-    const sequence = ++requestSequenceRef.current;
+    const sequence = beginRefreshRequest();
     getContentPosition(target, sensitiveFilterEnabled)
       .then(async (position) => {
         if (position == null) return null;
@@ -691,11 +711,15 @@ export function ContentList() {
         if (!page || sequence !== requestSequenceRef.current) return;
         setContents(page.items); setTotalCount(page.total); setTypeCounts(page.counts);
         setHasMore(page.items.length < page.total);
+        hasLoadedOnceRef.current = true;
         setTimeout(() => cardRefs.current[target]?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
       })
       .catch((error) => console.error("Failed to locate search result:", error))
-      .finally(() => setScrollToId(null));
-  }, [scrollToId, filter, dateRange, setScrollToId, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore]);
+      .finally(() => {
+        finishRefreshRequest(sequence);
+        setScrollToId(null);
+      });
+  }, [scrollToId, filter, dateRange, setScrollToId, sensitiveFilterEnabled, setContents, setTotalCount, setHasMore, beginRefreshRequest, finishRefreshRequest]);
 
   // Auto-clear highlights after 4 seconds
   useEffect(() => {
@@ -1009,7 +1033,7 @@ export function ContentList() {
       />
       {/* Header with filter tabs */}
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-1 p-0.5 rounded-xl glass">
+        <div className="relative flex items-center gap-1 p-0.5 rounded-xl glass" aria-busy={isRefreshing}>
           {FILTER_TABS.map((tab) => {
             const count = typeCounts[tab.value] || 0;
             if (tab.value !== "all" && count === 0) return null;
@@ -1040,6 +1064,13 @@ export function ContentList() {
               </button>
             );
           })}
+          {isRefreshing && (
+            <LoaderCircle
+              size={12}
+              className="absolute -right-4 animate-spin text-orange-500"
+              aria-label={t("loading")}
+            />
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {/* Date range filters */}
