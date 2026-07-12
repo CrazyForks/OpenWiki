@@ -13,7 +13,6 @@ import { compileContentToWiki, getContentWikiPages } from "../../services/wikiSe
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useContentStore } from "../../stores/contentStore";
-import { useDataHubStore } from "../../stores/dataHubStore";
 import { ImagePreview } from "./ImagePreview";
 import type { WikiPage } from "../../types/wiki";
 
@@ -45,7 +44,6 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   function ContentCard({ content, isHighlighted = false, initialWikiPages }, ref) {
   const { t } = useTranslation("content");
   const removeContent = useContentStore((s) => s.removeContent);
-  const removeFromDataHub = useDataHubStore((s) => s.removeContent);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -97,7 +95,6 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       try {
         await deleteContent(content.id);
         removeContent(content.id);
-        removeFromDataHub(content.id);
       } catch (e) {
         console.error("Failed to delete:", e);
         setDeleteState("idle");
