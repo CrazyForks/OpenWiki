@@ -14,6 +14,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
@@ -37,6 +38,14 @@ const LOAD_CODE_ASSIST_ENDPOINT: &str =
     "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
 const DEFAULT_PROJECT_ID: &str = "rising-fact-p41fc";
 const DB_KEY: &str = "gemini_oauth_token";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn oauth_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| format!("Failed to build Gemini OAuth HTTP client: {}", e))
+}
 
 // ── Public types ───────────────────────────────────────────────────────────
 
@@ -244,7 +253,7 @@ async fn exchange_code(
     code: &str,
     verifier: &str,
 ) -> Result<(String, Option<String>, i64), String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let body = format!(
         "client_id={}&client_secret={}&code={}&grant_type=authorization_code&redirect_uri={}&code_verifier={}",
         url_encode(CLIENT_ID),
@@ -289,7 +298,7 @@ async fn exchange_code(
 
 /// Refresh an access token using the stored refresh_token (includes client_secret).
 pub async fn refresh_gemini_token(refresh: &str) -> Result<GeminiOAuthToken, String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let body = format!(
         "grant_type=refresh_token&refresh_token={}&client_id={}&client_secret={}",
         url_encode(refresh),
@@ -349,7 +358,7 @@ pub async fn refresh_gemini_token(refresh: &str) -> Result<GeminiOAuthToken, Str
 
 /// Fetch the authenticated user's email address from Google userinfo endpoint.
 async fn fetch_user_email(access_token: &str) -> Option<String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client().ok()?;
     let resp = client
         .get("https://www.googleapis.com/oauth2/v1/userinfo?alt=json")
         .header("Authorization", format!("Bearer {}", access_token))
@@ -371,7 +380,7 @@ async fn fetch_user_email(access_token: &str) -> Option<String> {
 /// Fetch the Google Cloud project ID via the loadCodeAssist endpoint.
 /// Falls back to DEFAULT_PROJECT_ID if the call fails.
 async fn fetch_project_id(access_token: &str) -> Option<String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client().ok()?;
     let body = serde_json::json!({
         "metadata": {
             "ideType": "ANTIGRAVITY",

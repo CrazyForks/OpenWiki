@@ -13,6 +13,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
@@ -30,6 +31,14 @@ const SCOPES: &str = "openid profile email offline_access";
 const CALLBACK_PORT: u16 = 1455;
 const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const DB_KEY: &str = "openai_oauth_token";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn oauth_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| format!("Failed to build OAuth HTTP client: {}", e))
+}
 
 // ── Public types ───────────────────────────────────────────────────────────
 
@@ -219,7 +228,7 @@ struct TokenResponse {
 
 /// Exchange an authorization code for tokens.
 async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthToken, String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let body = format!(
         "grant_type=authorization_code&client_id={}&code={}&redirect_uri={}&code_verifier={}",
         CLIENT_ID,
@@ -252,7 +261,7 @@ async fn exchange_code(code: &str, verifier: &str) -> Result<OAuthToken, String>
 
 /// Refresh an access token using the stored refresh_token.
 pub async fn refresh_token(refresh: &str) -> Result<OAuthToken, String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let body = format!(
         "grant_type=refresh_token&client_id={}&refresh_token={}",
         CLIENT_ID,
