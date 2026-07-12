@@ -304,13 +304,10 @@ export default function BubbleView() {
   // ★ Listen for new capture events — UNSUBSCRIBE when expanded or confirmed
   useEffect(() => {
     if (expanded || confirmed) {
-      invoke("debug_log", { message: `[LISTENER] expanded=${expanded} confirmed=${confirmed}, NOT listening` }).catch(() => {});
       return;
     }
 
-    invoke("debug_log", { message: "[LISTENER] subscribing to capture:pending" }).catch(() => {});
     const unlisten = listen<PendingCapture>("capture:pending", (event) => {
-      invoke("debug_log", { message: `[LISTENER] capture:pending received! type=${event.payload.content_type}` }).catch(() => {});
       clearTimer(); setPending(event.payload); setCountdown(countdownMax);
       setExpanded(false); setMemo(""); setConfirmed(false); setSaving(false);
       pausedCountdownRef.current = null;
