@@ -54,6 +54,6 @@ export async function openExportDir(): Promise<void> {
   return invoke("open_export_dir");
 }
 
-export async function searchContent(query: string): Promise<CapturedContent[]> {
-  return invoke<CapturedContent[]>("search_content", { query });
+export async function searchContent(query: string, hideSensitive = false): Promise<CapturedContent[]> {
+  return invoke<CapturedContent[]>("search_content", { query, hideSensitive });
 }

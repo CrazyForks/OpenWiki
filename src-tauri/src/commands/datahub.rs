@@ -45,10 +45,12 @@ fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn search_content(
     query: String,
+    hide_sensitive: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<CapturedContent>, String> {
     let repo = Repository::new(state.db.clone());
-    repo.search_content(&query, 50).map_err(|e| e.to_string())
+    repo.search_content(&query, 50, hide_sensitive.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -158,7 +160,8 @@ pub async fn export_current_radar_report(state: State<'_, AppState>) -> Result<S
     let repo = Repository::new(state.db.clone());
     let export_dir = resolve_export_dir(&repo);
 
-    let path = report::export_current_radar_report(&repo, &export_dir).map_err(|e| e.to_string())?;
+    let path =
+        report::export_current_radar_report(&repo, &export_dir).map_err(|e| e.to_string())?;
 
     let _ = reveal_path(&path, "exported report");
 
