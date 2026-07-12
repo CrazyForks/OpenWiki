@@ -140,19 +140,9 @@ pub fn run() {
                     _ => {}
                 }
 
-                // Wipe the old tag-based "related" edges. The old algorithm
-                // connected any two pages sharing a single tag, which exploded
-                // the graph into a nearly-complete mess (988 pairs over 151
-                // pages). The new TF-IDF + cosine-similarity algorithm will
-                // regenerate them in the background task below. One-time safe
-                // migration: deleting edges never loses source data, and the
-                // rebuild task immediately repopulates the graph with meaningful
-                // connections.
-                match repo.delete_edges_by_relation("related") {
-                    Ok(n) if n > 0 => log::info!(
-                        "Cleared {} legacy 'related' edges, scheduling graph rebuild",
-                        n
-                    ),
+                match repo.migrate_wiki_edge_relations() {
+                    Ok(n) if n > 0 => log::info!("Restored {} Q&A reference edges", n),
+                    Err(error) => log::error!("Wiki edge migration failed: {}", error),
                     _ => {}
                 }
             }
