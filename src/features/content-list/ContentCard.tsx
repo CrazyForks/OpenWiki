@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from "react";
+import { useState, useRef, useEffect, forwardRef, memo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -40,7 +40,7 @@ function formatRelativeTime(dateStr: string, t: TFunction): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
+export const ContentCard = memo(forwardRef<HTMLDivElement, ContentCardProps>(
   function ContentCard({ content, isHighlighted = false, initialWikiPages }, ref) {
   const { t } = useTranslation("content");
   const removeContent = useContentStore((s) => s.removeContent);
@@ -508,7 +508,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       )}
     </>
   );
-});
+}));
 
 /* ================================================================
    AUTO-FORMAT — turn text with lightweight Markdown into styled elements
