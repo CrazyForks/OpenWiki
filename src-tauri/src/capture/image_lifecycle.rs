@@ -62,6 +62,33 @@ pub fn cleanup_pending_image(path: &str) -> Result<bool, String> {
     cleanup_pending_image_in(path, &pending)
 }
 
+/// Remove every regular file directly inside the pending directory and return
+/// how many were deleted. Call this only at startup, when no capture is in
+/// flight — any file left in `.pending` at that point is an orphan from a
+/// previous session (e.g. a Spotlight capture that was cancelled, or a crash
+/// before the image was saved or discarded). Subdirectories are left untouched.
+pub fn cleanup_stale_pending_images() -> Result<usize, String> {
+    let pending = pending_images_dir()?;
+    cleanup_stale_pending_images_in(&pending)
+}
+
+pub(crate) fn cleanup_stale_pending_images_in(pending_dir: &Path) -> Result<usize, String> {
+    let entries = match std::fs::read_dir(pending_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(format!("Failed to read pending directory: {}", error)),
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,5 +119,28 @@ mod tests {
         assert!(!owned.exists());
         assert!(cleanup_pending_image_in(&nested_file, &pending).is_err());
         assert!(nested_file.exists());
+    }
+
+    #[test]
+    fn stale_sweep_removes_only_direct_pending_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let pending = dir.path().join("captures/.pending");
+        let nested = pending.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        let orphan = pending.join("orphan.png");
+        let nested_file = nested.join("keep.png");
+        std::fs::write(&orphan, b"image").unwrap();
+        std::fs::write(&nested_file, b"image").unwrap();
+
+        assert_eq!(cleanup_stale_pending_images_in(&pending), Ok(1));
+        assert!(!orphan.exists());
+        assert!(nested_file.exists());
+    }
+
+    #[test]
+    fn stale_sweep_on_missing_dir_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let pending = dir.path().join("captures/.pending");
+        assert_eq!(cleanup_stale_pending_images_in(&pending), Ok(0));
     }
 }

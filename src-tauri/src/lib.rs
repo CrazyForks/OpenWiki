@@ -140,6 +140,12 @@ pub fn run() {
                     _ => {}
                 }
 
+                match crate::capture::image_lifecycle::cleanup_stale_pending_images() {
+                    Ok(n) if n > 0 => log::info!("Cleaned {} orphaned pending images", n),
+                    Err(error) => log::warn!("Pending image sweep failed: {}", error),
+                    _ => {}
+                }
+
                 match repo.migrate_wiki_edge_relations() {
                     Ok(n) if n > 0 => log::info!("Restored {} Q&A reference edges", n),
                     Err(error) => log::error!("Wiki edge migration failed: {}", error),
@@ -429,16 +435,15 @@ fn read_clipboard_content() -> (String, Option<String>, Option<String>) {
     ("text".to_string(), None, None)
 }
 
-/// Save clipboard image pixels to a temporary PNG file.
+/// Save clipboard image pixels to a pending PNG file. Writing into
+/// `captures/.pending` lets the save path move (rather than copy) the file into
+/// permanent storage, so no orphan is left behind; a cancelled capture's file is
+/// swept on the next startup.
 fn save_clipboard_image(img: &arboard::ImageData) -> Option<String> {
-    let base = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
-
-    let captures_dir = base.join("com.openwiki.app").join("captures");
-    let _ = std::fs::create_dir_all(&captures_dir);
+    let pending_dir = crate::capture::image_lifecycle::pending_images_dir().ok()?;
 
     let id = uuid::Uuid::new_v4().to_string();
-    let file_path = captures_dir.join(format!("{}.png", id));
+    let file_path = pending_dir.join(format!("{}.png", id));
 
     let rgba_buf =
         image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.to_vec())?;
